@@ -6,55 +6,48 @@ use oxc_ast_visit::{Visit, walk::walk_call_expression};
 
 #[derive(Default, Debug)]
 pub struct ImportVisitor {
-    pub imports: Vec<String>,
+    pub import_specifiers: Vec<String>,
 }
 
 impl ImportVisitor {
     pub fn new() -> Self {
-        Self {
-            imports: Vec::new(),
-        }
+        Self::default()
     }
 
-    fn add_import(&mut self, target_path: &str) {
-        self.imports.push(target_path.to_string());
+    fn add_import_specifier(&mut self, specifier: &str) {
+        self.import_specifiers.push(specifier.to_string());
     }
 }
 
 impl<'a> Visit<'a> for ImportVisitor {
-    // 1. Static ESM Imports: import { x } from './utils'
-    fn visit_import_declaration(&mut self, it: &ImportDeclaration<'a>) {
-        self.add_import(it.source.value.as_str());
+    fn visit_import_declaration(&mut self, declaration: &ImportDeclaration<'a>) {
+        self.add_import_specifier(declaration.source.value.as_str());
     }
 
-    // 2. Dynamic Imports: import('./utils')
-    fn visit_import_expression(&mut self, it: &ImportExpression<'a>) {
-        if let Expression::StringLiteral(str_lit) = &it.source {
-            self.add_import(str_lit.value.as_str());
+    fn visit_import_expression(&mut self, import_expression: &ImportExpression<'a>) {
+        if let Expression::StringLiteral(string_literal) = &import_expression.source {
+            self.add_import_specifier(string_literal.value.as_str());
         }
     }
 
-    // 3. Named Re-exports: export { x } from './utils'
-    fn visit_export_named_declaration(&mut self, it: &ExportNamedDeclaration<'a>) {
-        if let Some(source) = &it.source {
-            self.add_import(source.value.as_str());
+    fn visit_export_named_declaration(&mut self, declaration: &ExportNamedDeclaration<'a>) {
+        if let Some(source) = &declaration.source {
+            self.add_import_specifier(source.value.as_str());
         }
     }
 
-    // 4. Export All: export * from './utils'
-    fn visit_export_all_declaration(&mut self, it: &ExportAllDeclaration<'a>) {
-        self.add_import(it.source.value.as_str());
+    fn visit_export_all_declaration(&mut self, declaration: &ExportAllDeclaration<'a>) {
+        self.add_import_specifier(declaration.source.value.as_str());
     }
 
-    // 5. CommonJS: require('./utils')
-    fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
-        if let Expression::Identifier(ident) = &it.callee
-            && ident.name == "require"
-            && it.arguments.len() == 1
-            && let Argument::StringLiteral(str_lit) = &it.arguments[0]
+    fn visit_call_expression(&mut self, call_expression: &CallExpression<'a>) {
+        if let Expression::Identifier(identifier) = &call_expression.callee
+            && identifier.name == "require"
+            && call_expression.arguments.len() == 1
+            && let Argument::StringLiteral(string_literal) = &call_expression.arguments[0]
         {
-            self.add_import(str_lit.value.as_str());
+            self.add_import_specifier(string_literal.value.as_str());
         }
-        walk_call_expression(self, it);
+        walk_call_expression(self, call_expression);
     }
 }

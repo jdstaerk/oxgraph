@@ -146,7 +146,7 @@ fn resolve_entry_path(path: &Path) -> Result<PathBuf, GraphBuildError> {
 }
 
 fn discover_entry_in_dir(root: &Path) -> Option<PathBuf> {
-    const DIRECT_CANDIDATES: &[&str] = &[
+    const ROOT_ENTRY_CANDIDATES: &[&str] = &[
         "main.tsx",
         "main.ts",
         "index.tsx",
@@ -155,14 +155,14 @@ fn discover_entry_in_dir(root: &Path) -> Option<PathBuf> {
         "App.ts",
     ];
 
-    for candidate in DIRECT_CANDIDATES {
+    for candidate in ROOT_ENTRY_CANDIDATES {
         let candidate_path = root.join(candidate);
         if candidate_path.is_file() {
             return Some(candidate_path);
         }
     }
 
-    const SRC_CANDIDATES: &[&str] = &[
+    const SRC_ENTRY_CANDIDATES: &[&str] = &[
         "src/main.tsx",
         "src/main.ts",
         "src/index.tsx",
@@ -171,7 +171,7 @@ fn discover_entry_in_dir(root: &Path) -> Option<PathBuf> {
         "src/App.ts",
     ];
 
-    for candidate in SRC_CANDIDATES {
+    for candidate in SRC_ENTRY_CANDIDATES {
         let candidate_path = root.join(candidate);
         if candidate_path.is_file() {
             return Some(candidate_path);
@@ -267,7 +267,7 @@ struct GraphBuilder {
 impl GraphBuilder {
     fn new(resolver: Resolver) -> Self {
         Self {
-            graph: Graph::new(),
+            graph: Graph::default(),
             resolver,
             visited: HashSet::new(),
             in_progress: HashSet::new(),
@@ -328,7 +328,7 @@ impl GraphBuilder {
         };
 
         let import_specifiers = match extract_imports(&normalized.to_string_lossy(), &source_text) {
-            Ok(imports) => imports,
+            Ok(specifiers) => specifiers,
             Err(message) => {
                 self.push_issue(&normalized, GraphIssueKind::ParseError, message);
                 self.mark_node_status(&normalized, NodeStatus::SyntaxError);
@@ -344,10 +344,11 @@ impl GraphBuilder {
         for specifier in import_specifiers {
             match self.resolver.resolve(current_dir, &specifier) {
                 Ok(resolution) => {
-                    let target_path = normalize_existing_path(resolution.full_path().as_path())
-                        .unwrap_or_else(|_| resolution.full_path().to_path_buf());
-                    let target_node_id = node_id_from_path(&target_path);
-                    let is_circular = self.in_progress.contains(&target_path);
+                    let resolved_target_path =
+                        normalize_existing_path(resolution.full_path().as_path())
+                            .unwrap_or_else(|_| resolution.full_path().to_path_buf());
+                    let target_node_id = node_id_from_path(&resolved_target_path);
+                    let is_circular = self.in_progress.contains(&resolved_target_path);
                     let edge_id = format!("{}->{}", current_node_id, target_node_id);
 
                     self.push_edge(
@@ -360,15 +361,15 @@ impl GraphBuilder {
                     );
 
                     self.upsert_node(
-                        &target_path,
+                        &resolved_target_path,
                         NodeKind::File,
                         NodeStatus::Resolved,
                         false,
-                        Some(&target_path),
+                        Some(&resolved_target_path),
                     );
 
-                    if !is_circular && !self.visited.contains(&target_path) {
-                        self.walk(&target_path, false);
+                    if !is_circular && !self.visited.contains(&resolved_target_path) {
+                        self.walk(&resolved_target_path, false);
                     }
                 }
                 Err(err) => {

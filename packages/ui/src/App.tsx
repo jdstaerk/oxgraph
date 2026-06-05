@@ -1,49 +1,154 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from "react";
 import ReactFlow, {
   Background,
   Controls,
-  useNodesState,
   useEdgesState,
+  useNodesState,
+  type NodeMouseHandler,
+  type NodeTypes,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import CustomNode from "./CustomNode";
+import SearchBox from "./SearchBox";
+import type {
+  GraphEdgeData,
+  GraphNodeData,
+  GraphPayload,
+  GraphResponse,
+  LayoutedGraph,
+} from "./graphTypes";
 import { getLayoutedElements } from "./layout";
 
 type GraphMode = "graph" | "raw";
-
-type GraphPayload = {
-  nodes?: Array<any>;
-  edges?: Array<any>;
-  issues?: Array<any>;
-};
 
 type GraphMetrics = {
   fetchMs: number;
   layoutMs: number;
 };
 
-type LayoutedGraphState = {
-  nodes: Array<any>;
-  edges: Array<any>;
-};
+const SEARCH_RESULT_LIMIT = 8;
 
-const nodeTypes = {
+const nodeTypes: NodeTypes = {
   custom: CustomNode,
 };
 
-function collectFocusedNodeIds(startNodeId: string, edges: Array<any>) {
-  const related = new Set<string>([startNodeId]);
+const appStyle: CSSProperties = {
+  width: "100vw",
+  height: "100vh",
+  background: "#0f172a",
+  color: "#e2e8f0",
+  display: "flex",
+  flexDirection: "column",
+};
+
+const headerStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+  padding: "12px 16px",
+  borderBottom: "1px solid #1e293b",
+  background: "#0b1220",
+  flex: "0 0 auto",
+};
+
+const buttonStyleBase: CSSProperties = {
+  border: "1px solid #334155",
+  color: "#e2e8f0",
+  padding: "6px 10px",
+  borderRadius: 6,
+  cursor: "pointer",
+};
+
+const rawJsonStyle: CSSProperties = {
+  margin: 0,
+  width: "100%",
+  height: "100%",
+  overflow: "auto",
+  padding: 16,
+  fontSize: 12,
+  lineHeight: 1.6,
+  background: "#0b1220",
+  color: "#cbd5e1",
+  whiteSpace: "pre",
+};
+
+function emptyGraph(): GraphPayload {
+  return { nodes: [], edges: [], issues: [] };
+}
+
+function emptyLayoutedGraph(): LayoutedGraph {
+  return { nodes: [], edges: [] };
+}
+
+function normalizeGraphResponse(response: GraphResponse): GraphPayload {
+  return {
+    nodes: response.nodes ?? [],
+    edges: response.edges ?? [],
+    issues: response.issues ?? [],
+  };
+}
+
+function modeButtonStyle(isActive: boolean): CSSProperties {
+  return {
+    ...buttonStyleBase,
+    background: isActive ? "#1d4ed8" : "#0f172a",
+  };
+}
+
+function normalizeSearchQuery(query: string): string {
+  return query.trim().toLowerCase();
+}
+
+function nodeSearchText(node: LayoutedGraph["nodes"][number]): string {
+  return `${node.data.label} ${node.data.path} ${node.id}`.toLowerCase();
+}
+
+function matchesSearchQuery(
+  node: LayoutedGraph["nodes"][number],
+  normalizedQuery: string,
+): boolean {
+  return normalizedQuery.length > 0 && nodeSearchText(node).includes(normalizedQuery);
+}
+
+function applySearchHighlights(
+  graph: LayoutedGraph,
+  normalizedQuery: string,
+): LayoutedGraph {
+  if (!normalizedQuery) {
+    return graph;
+  }
+
+  return {
+    nodes: graph.nodes.map((node) => ({
+      ...node,
+      data: {
+        ...node.data,
+        searchMatch: matchesSearchQuery(node, normalizedQuery),
+      },
+    })),
+    edges: graph.edges,
+  };
+}
+
+function collectFocusedNodeIds(
+  startNodeId: string,
+  edges: LayoutedGraph["edges"],
+) {
+  const relatedNodeIds = new Set<string>([startNodeId]);
   const importerQueue = [startNodeId];
 
-  // Direct dependencies of the focused file.
   for (const edge of edges) {
     if (edge.source === startNodeId) {
-      related.add(edge.target);
+      relatedNodeIds.add(edge.target);
     }
   }
 
-  // Recursive importers of the focused file.
   while (importerQueue.length > 0) {
     const currentNodeId = importerQueue.shift();
     if (!currentNodeId) {
@@ -51,22 +156,22 @@ function collectFocusedNodeIds(startNodeId: string, edges: Array<any>) {
     }
 
     for (const edge of edges) {
-      if (edge.target !== currentNodeId || related.has(edge.source)) {
+      if (edge.target !== currentNodeId || relatedNodeIds.has(edge.source)) {
         continue;
       }
 
-      related.add(edge.source);
+      relatedNodeIds.add(edge.source);
       importerQueue.push(edge.source);
     }
   }
 
-  return related;
+  return relatedNodeIds;
 }
 
 function filterGraphByFocus(
-  graph: LayoutedGraphState,
+  graph: LayoutedGraph,
   focusedNodeId: string | null,
-): LayoutedGraphState {
+): LayoutedGraph {
   if (!focusedNodeId) {
     return graph;
   }
@@ -83,49 +188,47 @@ function filterGraphByFocus(
       selected: node.id === focusedNodeId,
     }));
   const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
+  const visibleEdges = graph.edges.filter(
+    (edge) =>
+      visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target),
+  );
 
-  return {
-    nodes: visibleNodes,
-    edges: graph.edges.filter((edge) => (
-      visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target)
-    )),
-  };
+  return { nodes: visibleNodes, edges: visibleEdges };
 }
 
 export default function App() {
   const [mode, setMode] = useState<GraphMode>("graph");
-  const [graph, setGraph] = useState<GraphPayload>({ nodes: [], edges: [], issues: [] });
-  const [layoutedGraph, setLayoutedGraph] = useState<LayoutedGraphState>({
-    nodes: [],
-    edges: [],
-  });
+  const [graph, setGraph] = useState<GraphPayload>(emptyGraph);
+  const [layoutedGraph, setLayoutedGraph] =
+    useState<LayoutedGraph>(emptyLayoutedGraph);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [metrics, setMetrics] = useState<GraphMetrics | null>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<GraphNodeData>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdgeData>([]);
+  const normalizedSearchQuery = useMemo(
+    () => normalizeSearchQuery(searchQuery),
+    [searchQuery],
+  );
 
   useEffect(() => {
     let isActive = true;
     const fetchStartedAt = performance.now();
 
     fetch("/api/graph-data")
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error("Netzwerk-Fehler beim Laden der Graph-Daten");
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to load graph data.");
         }
-        return res.json();
+        return response.json() as Promise<GraphResponse>;
       })
-      .then(async (data: GraphPayload) => {
+      .then(async (response) => {
         const fetchFinishedAt = performance.now();
-        const safeGraph = {
-          nodes: data.nodes || [],
-          edges: data.edges || [],
-          issues: data.issues || [],
-        };
+        const graphPayload = normalizeGraphResponse(response);
         const layoutStartedAt = performance.now();
-        const { layoutedNodes, layoutedEdges } = await getLayoutedElements(
-          safeGraph.nodes,
-          safeGraph.edges,
+        const layoutedElements = await getLayoutedElements(
+          graphPayload.nodes,
+          graphPayload.edges,
         );
         const layoutFinishedAt = performance.now();
 
@@ -133,18 +236,15 @@ export default function App() {
           return;
         }
 
-        setGraph(safeGraph);
+        setGraph(graphPayload);
         setFocusedNodeId(null);
-        setLayoutedGraph({
-          nodes: layoutedNodes,
-          edges: layoutedEdges,
-        });
+        setLayoutedGraph(layoutedElements);
         setMetrics({
           fetchMs: fetchFinishedAt - fetchStartedAt,
           layoutMs: layoutFinishedAt - layoutStartedAt,
         });
       })
-      .catch((err) => console.error(err));
+      .catch((error: unknown) => console.error(error));
 
     return () => {
       isActive = false;
@@ -152,17 +252,47 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const visibleGraph = filterGraphByFocus(layoutedGraph, focusedNodeId);
+    const visibleGraph = applySearchHighlights(
+      filterGraphByFocus(layoutedGraph, focusedNodeId),
+      normalizedSearchQuery,
+    );
     setNodes(visibleGraph.nodes);
     setEdges(visibleGraph.edges);
-  }, [focusedNodeId, layoutedGraph, setEdges, setNodes]);
+  }, [
+    focusedNodeId,
+    layoutedGraph,
+    normalizedSearchQuery,
+    setEdges,
+    setNodes,
+  ]);
 
-  const handleNodeClick = useCallback((_event: MouseEvent, node: any) => {
+  const handleNodeClick: NodeMouseHandler = useCallback((_event, node) => {
     setFocusedNodeId(node.id);
   }, []);
 
   const clearFocus = useCallback(() => {
     setFocusedNodeId(null);
+  }, []);
+
+  const searchMatches = useMemo(() => {
+    if (!normalizedSearchQuery) {
+      return [];
+    }
+
+    return layoutedGraph.nodes.filter((node) =>
+      matchesSearchQuery(node, normalizedSearchQuery),
+    );
+  }, [layoutedGraph.nodes, normalizedSearchQuery]);
+  const searchResults = searchMatches.slice(0, SEARCH_RESULT_LIMIT);
+  const searchResultCount = searchMatches.length;
+
+  const selectSearchResult = useCallback((nodeId: string) => {
+    setFocusedNodeId(nodeId);
+    setMode("graph");
+  }, []);
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery("");
   }, []);
 
   const rawJson = useMemo(() => JSON.stringify(graph, null, 2), [graph]);
@@ -171,63 +301,46 @@ export default function App() {
       return null;
     }
 
-    const focusedNode = layoutedGraph.nodes.find((node) => node.id === focusedNodeId);
-    return focusedNode?.data?.label || focusedNodeId;
+    const focusedNode = layoutedGraph.nodes.find(
+      (node) => node.id === focusedNodeId,
+    );
+    return focusedNode?.data.label || focusedNodeId;
   }, [focusedNodeId, layoutedGraph.nodes]);
 
+  const metricsLabel = metrics
+    ? ` · fetch ${Math.round(metrics.fetchMs)}ms · layout ${Math.round(metrics.layoutMs)}ms`
+    : "";
+  const statsLabel = `${nodes.length}/${graph.nodes.length} nodes · ${edges.length}/${graph.edges.length} edges · ${graph.issues.length} issues`;
+
   return (
-    <div
-      style={{
-        width: "100vw",
-        height: "100vh",
-        background: "#0f172a",
-        color: "#e2e8f0",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "12px 16px",
-          borderBottom: "1px solid #1e293b",
-          background: "#0b1220",
-          flex: "0 0 auto",
-        }}
-      >
+    <div style={appStyle}>
+      <div style={headerStyle}>
         <div style={{ fontSize: 14, fontWeight: 700 }}>oxgraph</div>
         <div style={{ display: "flex", gap: 8 }}>
           <button
             type="button"
             onClick={() => setMode("graph")}
-            style={{
-              border: "1px solid #334155",
-              background: mode === "graph" ? "#1d4ed8" : "#0f172a",
-              color: "#e2e8f0",
-              padding: "6px 10px",
-              borderRadius: 6,
-              cursor: "pointer",
-            }}
+            style={modeButtonStyle(mode === "graph")}
           >
             Graph
           </button>
           <button
             type="button"
             onClick={() => setMode("raw")}
-            style={{
-              border: "1px solid #334155",
-              background: mode === "raw" ? "#1d4ed8" : "#0f172a",
-              color: "#e2e8f0",
-              padding: "6px 10px",
-              borderRadius: 6,
-              cursor: "pointer",
-            }}
+            style={modeButtonStyle(mode === "raw")}
           >
             Raw JSON
           </button>
         </div>
+        <SearchBox
+          query={searchQuery}
+          results={searchResults}
+          resultCount={searchResultCount}
+          selectedNodeId={focusedNodeId}
+          onQueryChange={setSearchQuery}
+          onSelect={selectSearchResult}
+          onClear={clearSearch}
+        />
         {focusedLabel ? (
           <div
             style={{
@@ -247,30 +360,20 @@ export default function App() {
                 whiteSpace: "nowrap",
               }}
             >
-              Fokus: {focusedLabel}
+              Focus: {focusedLabel}
             </span>
             <button
               type="button"
               onClick={clearFocus}
-              style={{
-                border: "1px solid #334155",
-                background: "#0f172a",
-                color: "#e2e8f0",
-                padding: "6px 10px",
-                borderRadius: 6,
-                cursor: "pointer",
-              }}
+              style={{ ...buttonStyleBase, background: "#0f172a" }}
             >
-              Alle
+              All
             </button>
           </div>
         ) : null}
         <div style={{ marginLeft: "auto", fontSize: 12, color: "#94a3b8" }}>
-          {nodes.length}/{graph.nodes?.length ?? 0} nodes · {edges.length}/{graph.edges?.length ?? 0} edges ·{" "}
-          {graph.issues?.length ?? 0} issues
-          {metrics
-            ? ` · fetch ${Math.round(metrics.fetchMs)}ms · layout ${Math.round(metrics.layoutMs)}ms`
-            : ""}
+          {statsLabel}
+          {metricsLabel}
         </div>
       </div>
 
@@ -292,22 +395,7 @@ export default function App() {
             <Controls />
           </ReactFlow>
         ) : (
-          <pre
-            style={{
-              margin: 0,
-              width: "100%",
-              height: "100%",
-              overflow: "auto",
-              padding: 16,
-              fontSize: 12,
-              lineHeight: 1.6,
-              background: "#0b1220",
-              color: "#cbd5e1",
-              whiteSpace: "pre",
-            }}
-          >
-            {rawJson}
-          </pre>
+          <pre style={rawJsonStyle}>{rawJson}</pre>
         )}
       </div>
     </div>

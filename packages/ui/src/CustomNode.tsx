@@ -1,69 +1,82 @@
-import { Handle, Position } from 'reactflow';
+import { Handle, Position, type NodeProps } from "reactflow";
+import type { CSSProperties } from "react";
+import type { GraphNodeData } from "./graphTypes";
 
-export default function CustomNode({ data }: { data: any }) {
-  const label = data?.label || 'Unnamed Node';
-  const kind = data?.kind || 'file';
-  const status = data?.status || 'resolved';
-  const focused = Boolean(data?.focused);
+const nodeStyleBase: CSSProperties = {
+  width: 200,
+  minHeight: 50,
+  padding: "8px 12px",
+  color: "#f8fafc",
+  borderRadius: 8,
+  fontSize: 13,
+  fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+  boxShadow: "0 8px 24px rgba(0, 0, 0, 0.22)",
+  textAlign: "left",
+};
 
+function borderFor(data: GraphNodeData): string {
+  if (data.focused) {
+    return "2px solid #facc15";
+  }
+
+  if (data.searchMatch) {
+    return "2px solid #22c55e";
+  }
+
+  if (data.kind === "entry") {
+    return "1px solid #38bdf8";
+  }
+
+  return "1px solid #475569";
+}
+
+export default function CustomNode({ data }: NodeProps<GraphNodeData>) {
   return (
     <div
-      title={data?.path || label}
+      title={data.path || data.label}
       style={{
-        width: 200,
-        minHeight: 50,
-        padding: '8px 12px',
-        background: kind === 'ghost' ? '#3f1d1d' : '#1e293b',
-        color: '#f8fafc',
-        border: focused
-          ? '2px solid #facc15'
-          : kind === 'entry'
-            ? '1px solid #38bdf8'
-            : '1px solid #475569',
-        borderRadius: '8px',
-        fontSize: '13px',
-        fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.22)',
-        textAlign: 'left',
+        ...nodeStyleBase,
+        background: data.kind === "ghost" ? "#3f1d1d" : "#1e293b",
+        border: borderFor(data),
       }}
     >
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        id="in" 
-        style={{ background: '#3b82f6' }} 
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="in"
+        style={{ background: "#3b82f6" }}
       />
 
       <div
         style={{
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
           fontWeight: 700,
           lineHeight: 1.25,
         }}
       >
-        {label}
+        {data.label}
       </div>
       <div
         style={{
           marginTop: 6,
-          display: 'flex',
+          display: "flex",
           gap: 6,
-          color: '#cbd5e1',
+          color: "#cbd5e1",
           fontSize: 11,
           lineHeight: 1,
         }}
       >
-        <span>{kind}</span>
-        <span>{status}</span>
+        <span>{data.kind}</span>
+        <span>{data.status}</span>
       </div>
 
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        id="out" 
-        style={{ background: '#10b981' }} 
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="out"
+        style={{ background: "#10b981" }}
       />
     </div>
   );

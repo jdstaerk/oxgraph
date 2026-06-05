@@ -17,24 +17,27 @@ pub use graph::{
     Edge, Graph, GraphBuildError, GraphIssueKind, Node, NodeKind, NodeStatus, build_graph,
 };
 
-/// Parses a source string and extracts all import paths.
-/// Returns a Vector of import strings or an error message if parsing fails.
+/// Extracts import specifiers from a JavaScript or TypeScript source string.
 pub fn extract_imports(
     file_path: &str,
     source_text: &str,
 ) -> std::result::Result<Vec<String>, String> {
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(file_path).unwrap_or_default();
-    let ret = Parser::new(&allocator, source_text, source_type).parse();
+    let parse_result = Parser::new(&allocator, source_text, source_type).parse();
 
-    if !ret.errors.is_empty() {
-        let error_msgs: Vec<String> = ret.errors.iter().map(|e| format!("{:?}", e)).collect();
-        return Err(error_msgs.join("\n"));
+    if !parse_result.errors.is_empty() {
+        let error_messages: Vec<String> = parse_result
+            .errors
+            .iter()
+            .map(|error| format!("{:?}", error))
+            .collect();
+        return Err(error_messages.join("\n"));
     }
 
     let mut visitor = ImportVisitor::new();
-    visitor.visit_program(&ret.program);
-    Ok(visitor.imports)
+    visitor.visit_program(&parse_result.program);
+    Ok(visitor.import_specifiers)
 }
 
 #[derive(Debug, Serialize)]
