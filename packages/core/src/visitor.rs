@@ -48,12 +48,12 @@ impl<'a> Visit<'a> for ImportVisitor {
 
     // 5. CommonJS: require('./utils')
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
-        if let Expression::Identifier(ident) = &it.callee {
-            if ident.name == "require" && it.arguments.len() == 1 {
-                if let Argument::StringLiteral(str_lit) = &it.arguments[0] {
-                    self.add_import(str_lit.value.as_str());
-                }
-            }
+        if let Expression::Identifier(ident) = &it.callee
+            && ident.name == "require"
+            && it.arguments.len() == 1
+            && let Argument::StringLiteral(str_lit) = &it.arguments[0]
+        {
+            self.add_import(str_lit.value.as_str());
         }
         walk_call_expression(self, it);
     }

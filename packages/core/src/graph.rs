@@ -24,6 +24,12 @@ impl Graph {
     }
 }
 
+impl Default for Graph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum NodeKind {
@@ -93,7 +99,12 @@ impl fmt::Display for GraphBuildError {
                 write!(f, "entry file does not exist: {}", path.display())
             }
             Self::EntryReadFailed { path, message } => {
-                write!(f, "failed to read entry file {}: {}", path.display(), message)
+                write!(
+                    f,
+                    "failed to read entry file {}: {}",
+                    path.display(),
+                    message
+                )
             }
         }
     }
@@ -102,15 +113,72 @@ impl fmt::Display for GraphBuildError {
 impl std::error::Error for GraphBuildError {}
 
 pub fn build_graph(entry_file: impl AsRef<Path>) -> Result<Graph, GraphBuildError> {
-    let entry_path = normalize_path(entry_file.as_ref())?;
-    if !entry_path.exists() {
-        return Err(GraphBuildError::EntryNotFound { path: entry_path });
-    }
+    let entry_path = resolve_entry_path(entry_file.as_ref())?;
 
     let resolver = create_resolver(&entry_path);
     let mut builder = GraphBuilder::new(resolver);
     builder.walk(&entry_path, true);
     Ok(builder.graph)
+}
+
+fn resolve_entry_path(path: &Path) -> Result<PathBuf, GraphBuildError> {
+    if path.is_file() {
+        return normalize_path(path);
+    }
+
+    if path.is_dir() {
+        if let Some(candidate) = discover_entry_in_dir(path) {
+            return normalize_path(&candidate);
+        }
+
+        return Err(GraphBuildError::EntryNotFound {
+            path: path.to_path_buf(),
+        });
+    }
+
+    if path.exists() {
+        return normalize_path(path);
+    }
+
+    Err(GraphBuildError::EntryNotFound {
+        path: path.to_path_buf(),
+    })
+}
+
+fn discover_entry_in_dir(root: &Path) -> Option<PathBuf> {
+    const DIRECT_CANDIDATES: &[&str] = &[
+        "main.tsx",
+        "main.ts",
+        "index.tsx",
+        "index.ts",
+        "App.tsx",
+        "App.ts",
+    ];
+
+    for candidate in DIRECT_CANDIDATES {
+        let candidate_path = root.join(candidate);
+        if candidate_path.is_file() {
+            return Some(candidate_path);
+        }
+    }
+
+    const SRC_CANDIDATES: &[&str] = &[
+        "src/main.tsx",
+        "src/main.ts",
+        "src/index.tsx",
+        "src/index.ts",
+        "src/App.tsx",
+        "src/App.ts",
+    ];
+
+    for candidate in SRC_CANDIDATES {
+        let candidate_path = root.join(candidate);
+        if candidate_path.is_file() {
+            return Some(candidate_path);
+        }
+    }
+
+    None
 }
 
 fn normalize_path(path: &Path) -> Result<PathBuf, GraphBuildError> {
@@ -213,14 +281,14 @@ impl GraphBuilder {
         let normalized = match normalize_existing_path(file_path) {
             Ok(path) => path,
             Err(message) => {
-                self.push_issue(
-                    file_path,
-                    GraphIssueKind::ReadError,
-                    message.clone(),
-                );
+                self.push_issue(file_path, GraphIssueKind::ReadError, message.clone());
                 self.upsert_node(
                     file_path,
-                    if is_entry { NodeKind::Entry } else { NodeKind::File },
+                    if is_entry {
+                        NodeKind::Entry
+                    } else {
+                        NodeKind::File
+                    },
                     NodeStatus::ReadError,
                     is_entry,
                     Some(file_path),
@@ -252,11 +320,7 @@ impl GraphBuilder {
         let source_text = match fs::read_to_string(&normalized) {
             Ok(content) => content,
             Err(err) => {
-                self.push_issue(
-                    &normalized,
-                    GraphIssueKind::ReadError,
-                    err.to_string(),
-                );
+                self.push_issue(&normalized, GraphIssueKind::ReadError, err.to_string());
                 self.mark_node_status(&normalized, NodeStatus::ReadError);
                 self.in_progress.remove(&normalized);
                 return;
