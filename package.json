@@ -1,0 +1,23 @@
+{
+  "name": "oxgraph",
+  "private": true,
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "engines": {
+    "node": ">= 18"
+  },
+  "scripts": {
+    "build:ui": "pnpm --filter @oxgraph/ui run build",
+    "copy:ui": "shx rm -rf packages/cli/public-ui && shx cp -r packages/ui/dist packages/cli/public-ui",
+    "build": "pnpm run build:ui && pnpm run copy:ui",
+    "oxgraph": "node packages/cli/bin/oxgraph.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "GNU GPLv3 ",
+  "packageManager": "pnpm@10.29.3",
+  "devDependencies": {
+    "shx": "^0.4.0"
+  }
+}

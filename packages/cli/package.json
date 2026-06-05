@@ -1,0 +1,11 @@
+{
+  "name": "@oxgraph/cli",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "oxgraph": "./bin/oxgraph.js"
+  },
+  "dependencies": {
+    "open": "^11.0.0"
+  }
+}
