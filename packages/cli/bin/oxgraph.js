@@ -5,7 +5,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import open from "open";
 
-// BÄM! Der Import deines nativen Rust-Moduls
 import { extractGraph } from "@oxgraph/core";
 
 const __filename = fileURLToPath(import.meta.url);
