@@ -4,11 +4,19 @@
   "private": true,
   "description": "High-performance AST parser for oxgraph",
   "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "oxgraph-core"
+  },
   "scripts": {
-    "dev": "cargo run"
+    "build": "napi build --platform --release",
+    "dev": "napi build --platform"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.29.3"
+  "packageManager": "pnpm@10.29.3",
+  "devDependencies": {
+    "@napi-rs/cli": "^3.7.0"
+  }
 }

@@ -2,6 +2,7 @@
   "name": "@oxgraph/cli",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "bin": {
     "oxgraph": "./bin/oxgraph.js"
   },

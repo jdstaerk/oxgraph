@@ -1,36 +1,61 @@
+#![deny(clippy::all)]
+
 pub mod visitor;
-pub mod graph;
 
-use oxc_allocator::Allocator;
-use oxc_ast_visit::Visit;
-use oxc_parser::Parser;
-use oxc_span::SourceType;
-use visitor::ImportVisitor;
+use napi_derive::napi;
+// (Wenn du deine Oxc-Logik aus der vorherigen Session in einer separaten Datei hast,
+// importierst du sie hier. Für das Beispiel nutze ich eine Dummy-Oxc-Funktion)
 
-pub use graph::{build_graph, Edge, Graph, GraphBuildError, GraphIssue, GraphIssueKind, Node, NodeKind, NodeStatus};
+// 1. Die Datenstrukturen für React Flow
+// #[napi(object)] sagt NAPI, dass dies zu einem normalen JS-Objekt {} wird.
+#[napi(object)]
+pub struct ReactFlowNode {
+    pub id: String,
+    // "type" ist in Rust ein reserviertes Wort.
+    // Mit js_name sagen wir NAPI, dass es in JavaScript trotzdem { type: '...' } heißen soll.
+    #[napi(js_name = "type")]
+    pub node_type: String,
+}
 
-/// Parses a source string and extracts all import paths.
-/// Returns a Vector of import strings or an error message if parsing fails.
-pub fn extract_imports(file_path: &str, source_text: &str) -> Result<Vec<String>, String> {
-    // 1. Initialize the memory arena
-    let allocator = Allocator::default();
+#[napi(object)]
+pub struct ReactFlowEdge {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+}
 
-    // 2. Determine file type (TS, TSX, JS, etc.)
-    let source_type = SourceType::from_path(file_path).unwrap_or_default();
+#[napi(object)]
+pub struct GraphData {
+    pub nodes: Vec<ReactFlowNode>,
+    pub edges: Vec<ReactFlowEdge>,
+}
 
-    // 3. Parse to AST
-    let ret = Parser::new(&allocator, source_text, source_type).parse();
+// 2. Deine exportierte Hauptfunktion
+// Das #[napi] Makro macht diese Funktion in Node.js via import/require verfügbar.
+#[napi]
+pub fn extract_graph(target_path: String) -> GraphData {
+    // --- HIER RUFTST DU DEINEN OXC-PARSER UND VISITOR AUF ---
+    // (Da du sagtest, du hast die Traversierung und Path-Resolution schon gelöst,
+    // nimmst du hier deine Ergebnisse und mapst sie in die ReactFlow-Structs).
 
-    if !ret.errors.is_empty() {
-        // Collect all error messages into a single string for the caller
-        let error_msgs: Vec<String> = ret.errors.iter().map(|e| format!("{:?}", e)).collect();
-        return Err(error_msgs.join("\n"));
-    }
+    // Beispiel-Mapping (ersetze das mit deinen echten Ergebnissen):
+    let nodes = vec![
+        ReactFlowNode {
+            id: target_path.clone(),
+            node_type: "default".to_string(),
+        },
+        ReactFlowNode {
+            id: format!("{}/components/Button.tsx", target_path),
+            node_type: "default".to_string(),
+        },
+    ];
 
-    // 4. Traverse the AST
-    let mut visitor = ImportVisitor::new();
-    visitor.visit_program(&ret.program);
+    let edges = vec![ReactFlowEdge {
+        id: format!("{}->{}/components/Button.tsx", target_path, target_path),
+        source: target_path.clone(),
+        target: format!("{}/components/Button.tsx", target_path),
+    }];
 
-    // 5. Return the extracted imports
-    Ok(visitor.imports)
+    // Rückgabe des fertigen Graphen an Node.js
+    GraphData { nodes, edges }
 }
