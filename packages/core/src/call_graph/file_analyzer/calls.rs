@@ -1,5 +1,6 @@
 use super::super::ast_utils::{
-    StaticMemberCall, resolve_direct_identifier_call, static_member_call,
+    StaticMemberCall, resolve_direct_identifier_call, resolve_jsx_component_call,
+    static_member_call,
 };
 use super::super::internal_model::{PendingCallEdge, PendingCallTarget};
 use super::super::model::{CallConfidence, CallEdgeKind};
@@ -14,23 +15,42 @@ impl<'a> FileCallAnalyzer<'a> {
         let scoping = self.semantic.scoping();
 
         for (node_id, node) in nodes.iter_enumerated() {
-            let AstKind::CallExpression(call_expression) = node.kind() else {
-                continue;
-            };
-
             let Some(caller_id) = self.find_caller_id(nodes, node_id) else {
                 continue;
             };
 
-            if let Some((callee_name, symbol_id)) =
-                resolve_direct_identifier_call(scoping, call_expression)
-            {
-                self.push_direct_call(caller_id, callee_name, symbol_id, call_expression.span);
-                continue;
-            }
+            match node.kind() {
+                AstKind::CallExpression(call_expression) => {
+                    if let Some((callee_name, symbol_id)) =
+                        resolve_direct_identifier_call(scoping, call_expression)
+                    {
+                        self.push_direct_call(
+                            caller_id,
+                            callee_name,
+                            symbol_id,
+                            call_expression.span,
+                        );
+                        continue;
+                    }
 
-            if let Some(member_call) = static_member_call(scoping, &call_expression.callee) {
-                self.push_member_call(caller_id, member_call, call_expression.span);
+                    if let Some(member_call) = static_member_call(scoping, &call_expression.callee)
+                    {
+                        self.push_member_call(caller_id, member_call, call_expression.span);
+                    }
+                }
+                AstKind::JSXOpeningElement(opening_element) => {
+                    if let Some((callee_name, symbol_id)) =
+                        resolve_jsx_component_call(scoping, opening_element)
+                    {
+                        self.push_direct_call(
+                            caller_id,
+                            callee_name,
+                            symbol_id,
+                            opening_element.span,
+                        );
+                    }
+                }
+                _ => {}
             }
         }
     }

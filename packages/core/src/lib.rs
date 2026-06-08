@@ -243,7 +243,7 @@ impl From<CallNode> for ReactFlowCallNode {
     fn from(node: CallNode) -> Self {
         Self {
             id: node.id,
-            node_type: "call".to_string(),
+            node_type: "custom".to_string(),
             data: CallNodeData {
                 label: node.label,
                 name: node.name,

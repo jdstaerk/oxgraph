@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useState,
   type ChangeEvent,
   type CSSProperties,
@@ -63,12 +64,15 @@ const resultsContainerStyle: CSSProperties = {
   overflow: "hidden",
 };
 
-function resultButtonStyle(isSelected: boolean): CSSProperties {
+function resultButtonStyle(
+  isSelected: boolean,
+  isHighlighted: boolean,
+): CSSProperties {
   return {
     width: "100%",
     border: "none",
     borderBottom: "1px solid #1e293b",
-    background: isSelected ? "#1e3a8a" : "#0b1220",
+    background: isSelected || isHighlighted ? "#1e3a8a" : "#0b1220",
     color: "#e2e8f0",
     padding: "8px 10px",
     cursor: "pointer",
@@ -88,7 +92,16 @@ export default function SearchBox({
   onClear,
 }: SearchBoxProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const hasQuery = query.trim().length > 0;
+  const activeIndex =
+    results.length > 0
+      ? Math.min(highlightedIndex, results.length - 1)
+      : 0;
+
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [query]);
 
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -100,17 +113,34 @@ export default function SearchBox({
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.key === "Enter" && results[0]) {
+      if (event.key === "ArrowDown" && results.length > 0) {
         event.preventDefault();
-        onSelect(results[0].id);
+        setIsOpen(true);
+        setHighlightedIndex((index) => (index + 1) % results.length);
+        return;
+      }
+
+      if (event.key === "ArrowUp" && results.length > 0) {
+        event.preventDefault();
+        setIsOpen(true);
+        setHighlightedIndex(
+          (index) => (index - 1 + results.length) % results.length,
+        );
+        return;
+      }
+
+      if (event.key === "Enter" && results[activeIndex]) {
+        event.preventDefault();
+        onSelect(results[activeIndex].id);
         setIsOpen(false);
       }
 
       if (event.key === "Escape") {
+        event.preventDefault();
         setIsOpen(false);
       }
     },
-    [onSelect, results],
+    [activeIndex, onSelect, results],
   );
 
   const handleSelect = useCallback(
@@ -158,13 +188,17 @@ export default function SearchBox({
         <div style={resultsContainerStyle}>
           {results.length > 0 ? (
             <>
-              {results.map((node) => (
+              {results.map((node, index) => (
                 <button
                   key={node.id}
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setHighlightedIndex(index)}
                   onClick={() => handleSelect(node.id)}
-                  style={resultButtonStyle(node.id === selectedNodeId)}
+                  style={resultButtonStyle(
+                    node.id === selectedNodeId,
+                    index === activeIndex,
+                  )}
                 >
                   <div
                     style={{

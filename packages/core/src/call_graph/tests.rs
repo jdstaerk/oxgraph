@@ -227,6 +227,60 @@ fn resolves_tsconfig_alias_imports_after_path_resolution() {
 }
 
 #[test]
+fn resolves_jsx_component_usage_as_call_edges() {
+    let dir = create_test_dir("jsx-component-calls");
+    fs::write(
+        dir.join("main.tsx"),
+        r#"
+import { AddItemForm } from './form';
+
+function LocalBadge() {
+  return <span />;
+}
+
+export function Page() {
+  return <section><AddItemForm /><LocalBadge /><button /></section>;
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.join("form.tsx"),
+        "export function AddItemForm() { return <form />; }\n",
+    )
+    .unwrap();
+
+    let graph = build_call_graph(dir.join("main.tsx"), Some("Page")).unwrap();
+    let callees: HashSet<&str> = graph
+        .edges
+        .iter()
+        .map(|edge| edge.callee_name.as_str())
+        .collect();
+
+    assert!(graph.nodes.iter().any(|node| node.name == "Page"));
+    assert!(graph.nodes.iter().any(|node| node.name == "AddItemForm"));
+    assert!(graph.nodes.iter().any(|node| node.name == "LocalBadge"));
+    assert!(callees.contains("AddItemForm"));
+    assert!(callees.contains("LocalBadge"));
+    assert!(!callees.contains("section"));
+    assert!(!callees.contains("button"));
+    assert!(graph.edges.iter().any(|edge| {
+        edge.callee_name == "AddItemForm"
+            && edge.kind == CallEdgeKind::Import
+            && edge.confidence == CallConfidence::High
+            && !edge.unresolved
+    }));
+    assert!(graph.edges.iter().any(|edge| {
+        edge.callee_name == "LocalBadge"
+            && edge.kind == CallEdgeKind::Direct
+            && edge.confidence == CallConfidence::High
+            && !edge.unresolved
+    }));
+
+    fs::remove_dir_all(dir).ok();
+}
+
+#[test]
 fn filters_entry_function_to_full_caller_and_callee_lines() {
     let dir = create_test_dir("recursive-entry-filter");
     fs::write(

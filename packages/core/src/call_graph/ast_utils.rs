@@ -1,7 +1,7 @@
 use super::model::CallNodeKind;
 use oxc_ast::ast::{
-    BindingPattern, CallExpression, Expression, IdentifierReference, ModuleExportName, PropertyKey,
-    VariableDeclarator,
+    BindingPattern, CallExpression, Expression, IdentifierReference, JSXElementName,
+    JSXOpeningElement, ModuleExportName, PropertyKey, VariableDeclarator,
 };
 use oxc_semantic::Scoping;
 use oxc_span::Span;
@@ -42,6 +42,20 @@ pub(super) fn resolve_direct_identifier_call(
     Some((identifier.name.as_str().to_string(), symbol_id))
 }
 
+pub(super) fn resolve_jsx_component_call(
+    scoping: &Scoping,
+    opening_element: &JSXOpeningElement<'_>,
+) -> Option<(String, usize)> {
+    let identifier = jsx_component_identifier(opening_element)?;
+    let component_name = identifier.name.as_str();
+    if !is_component_name(component_name) {
+        return None;
+    }
+
+    let symbol_id = symbol_id_for_reference(scoping, identifier)?;
+    Some((component_name.to_string(), symbol_id))
+}
+
 pub(super) fn symbol_id_for_reference(
     scoping: &Scoping,
     identifier: &IdentifierReference<'_>,
@@ -71,6 +85,21 @@ pub(super) fn direct_identifier_callee<'a>(
         }
         _ => None,
     }
+}
+
+fn jsx_component_identifier<'a>(
+    opening_element: &'a JSXOpeningElement<'a>,
+) -> Option<&'a IdentifierReference<'a>> {
+    match &opening_element.name {
+        JSXElementName::IdentifierReference(identifier) => Some(identifier),
+        _ => None,
+    }
+}
+
+fn is_component_name(name: &str) -> bool {
+    name.chars()
+        .next()
+        .is_some_and(|character| character.is_ascii_uppercase())
 }
 
 #[derive(Clone)]

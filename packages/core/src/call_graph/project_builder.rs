@@ -116,6 +116,14 @@ impl ProjectCallGraphBuilder {
             filter_to_entry_neighborhood(&mut graph, entry_function, &mut self.issue_counter);
         }
 
+        let mut active_nodes = HashSet::new();
+        for edge in &graph.edges {
+            active_nodes.insert(edge.source.clone());
+            active_nodes.insert(edge.target.clone());
+        }
+
+        graph.nodes.retain(|node| node.is_entry || active_nodes.contains(&node.id));
+
         graph
     }
 

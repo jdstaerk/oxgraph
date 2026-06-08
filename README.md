@@ -1,34 +1,31 @@
 # oxgraph
 
-oxgraph is a real-time codebase dependency visualizer. It parses JavaScript and TypeScript projects with a Rust backend, resolves imports on the native side, and renders the resulting dependency graph in a React Flow UI.
+**oxgraph** is a fast, real-time codebase dependency visualizer and call graph generator designed for modern JavaScript and TypeScript projects. 
 
-The current MVP focuses on fast file dependency extraction. The Rust core keeps the AST inside Rust and only sends compact graph data to Node.js and the browser.
+It leverages the Oxidation Compiler suite (`oxc`) in a native Rust backend to statically analyze your codebase at incredible speeds, providing interactive, visual maps of your file dependencies and function call paths.
+
+*Note: Currently, oxgraph is especially well-suited and optimized for analyzing React projects.*
 
 ## Features
 
-- Rust-powered parsing with `oxc`
-- Import extraction for:
-  - static ESM imports
-  - dynamic imports
-  - named re-exports
-  - `export *`
-  - CommonJS `require(...)`
-- Path resolution through `oxc_resolver`
-- Recursive dependency graph traversal
-- React Flow graph rendering
-- ELK-based automatic layout
-- Raw JSON developer view
-- Focus mode for inspecting related files
-- NAPI-RS bridge from Rust to Node.js
+- **Lightning-Fast Parsing:** Powered by a Rust backend using `oxc` for AST extraction, entirely avoiding Node.js memory limits.
+- **Dependency Graphs:** Automatically extract and map ESM imports, dynamic imports, named re-exports, `export *`, and CommonJS `require()`.
+- **Call Graph Generation:** Trace function and method calls across your codebase, starting from a specific entry function.
+- **Interactive UI:** Render complex architectures beautifully with an automatic ELK-based layout, search functionality, and focus modes built on React Flow.
+- **Intelligent Pruning:** The graph engine automatically filters out noisy framework code and prunes isolated orphan nodes to keep your architectural overview clean and actionable.
 
-## Monorepo Layout
+## Architecture
 
-```text
-packages/
-  core/   Rust parser, resolver, graph builder, and NAPI export
-  cli/    Node CLI and local web server wrapper
-  ui/     Vite + React Flow frontend
-```
+oxgraph is structured as a highly optimized monorepo, splitting responsibilities between native performance and web-based visualization to ensure maximum efficiency.
+
+1. **Core (`@oxgraph/core`)**  
+   The heavy-lifting engine written in **Rust**. It utilizes the `oxc` parser to rapidly convert JS/TS source code into Abstract Syntax Trees (ASTs). All path resolution (`oxc_resolver`), import extraction, and recursive call graph traversals happen entirely on the native side. The final graph structures are exposed to Node.js via **NAPI-RS**. By keeping the AST inside Rust and only serializing the minimal layout data, oxgraph bypasses the massive memory bottlenecks typically associated with Node.js AST traversal.
+
+2. **CLI & Server (`@oxgraph/cli`)**  
+   A Node.js/TypeScript wrapper that acts as the orchestrator. When you run `oxgraph`, the CLI calls the Rust core to parse the target directory. It then spins up a lightweight local HTTP server, statically serving the UI and providing a JSON API bridge (`/api/graph-data`, `/api/call-graph-data`) to send the pre-calculated Rust results directly to the browser.
+
+3. **Web UI (`@oxgraph/ui`)**  
+   The visual dashboard built with **Vite, React, and React Flow**. It fetches the parsed API payload from the CLI server and visually plots the nodes and edges. It provides dynamic features like automatic layout calculation, search filtering, a focus mode for inspecting related files, and an issues panel for tracking unresolved imports or syntax errors.
 
 ## Requirements
 
