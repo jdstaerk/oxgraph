@@ -8,13 +8,14 @@
     "node": ">= 18"
   },
   "scripts": {
+    "build:core": "pnpm --filter @oxgraph/core run build",
     "build:ui": "pnpm --filter @oxgraph/ui run build",
     "copy:ui": "shx rm -rf packages/cli/public-ui && shx cp -r packages/ui/dist packages/cli/public-ui",
     "build:cli": "pnpm --filter @oxgraph/cli run build",
-    "build": "pnpm run build:ui && pnpm run copy:ui && pnpm run build:cli",
+    "build": "pnpm run build:core && pnpm run build:ui && pnpm run copy:ui && pnpm run build:cli",
     "dev:api": "pnpm --filter @oxgraph/cli run dev:api --",
     "dev:ui": "pnpm --filter @oxgraph/ui run dev",
-    "oxgraph": "pnpm run build:cli && node packages/cli/dist/bin/oxgraph.js"
+    "oxgraph": "pnpm run build && node packages/cli/dist/bin/oxgraph.js"
   },
   "keywords": [],
   "author": "",

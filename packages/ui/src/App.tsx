@@ -2,8 +2,10 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
+  type FormEvent,
 } from "react";
 import ReactFlow, {
   Background,
@@ -25,6 +27,7 @@ import type {
 } from "./graphTypes";
 import { getLayoutedElements } from "./layout";
 
+type AnalysisMode = "dependency" | "call";
 type GraphMode = "graph" | "raw";
 
 type GraphMetrics = {
@@ -50,6 +53,7 @@ const appStyle: CSSProperties = {
 const headerStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
+  flexWrap: "wrap",
   gap: 12,
   padding: "12px 16px",
   borderBottom: "1px solid #1e293b",
@@ -106,7 +110,7 @@ function normalizeSearchQuery(query: string): string {
 }
 
 function nodeSearchText(node: LayoutedGraph["nodes"][number]): string {
-  return `${node.data.label} ${node.data.path} ${node.id}`.toLowerCase();
+  return `${node.data.label} ${node.data.name ?? ""} ${node.data.path} ${node.data.file ?? ""} ${node.id}`.toLowerCase();
 }
 
 function matchesSearchQuery(
@@ -141,16 +145,27 @@ function collectFocusedNodeIds(
   edges: LayoutedGraph["edges"],
 ) {
   const relatedNodeIds = new Set<string>([startNodeId]);
-  const importerQueue = [startNodeId];
+  const outgoingQueue = [startNodeId];
+  const incomingQueue = [startNodeId];
 
-  for (const edge of edges) {
-    if (edge.source === startNodeId) {
+  while (outgoingQueue.length > 0) {
+    const currentNodeId = outgoingQueue.shift();
+    if (!currentNodeId) {
+      continue;
+    }
+
+    for (const edge of edges) {
+      if (edge.source !== currentNodeId || relatedNodeIds.has(edge.target)) {
+        continue;
+      }
+
       relatedNodeIds.add(edge.target);
+      outgoingQueue.push(edge.target);
     }
   }
 
-  while (importerQueue.length > 0) {
-    const currentNodeId = importerQueue.shift();
+  while (incomingQueue.length > 0) {
+    const currentNodeId = incomingQueue.shift();
     if (!currentNodeId) {
       continue;
     }
@@ -161,7 +176,7 @@ function collectFocusedNodeIds(
       }
 
       relatedNodeIds.add(edge.source);
-      importerQueue.push(edge.source);
+      incomingQueue.push(edge.source);
     }
   }
 
@@ -197,25 +212,45 @@ function filterGraphByFocus(
 }
 
 export default function App() {
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [analysisMode, setAnalysisMode] =
+    useState<AnalysisMode>("dependency");
   const [mode, setMode] = useState<GraphMode>("graph");
   const [graph, setGraph] = useState<GraphPayload>(emptyGraph);
   const [layoutedGraph, setLayoutedGraph] =
     useState<LayoutedGraph>(emptyLayoutedGraph);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [callEntryFunction, setCallEntryFunction] = useState("");
+  const [activeCallEntryFunction, setActiveCallEntryFunction] = useState("");
   const [metrics, setMetrics] = useState<GraphMetrics | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdgeData>([]);
   const normalizedSearchQuery = useMemo(
     () => normalizeSearchQuery(searchQuery),
     [searchQuery],
   );
+  const graphEndpoint = useMemo(() => {
+    if (analysisMode === "dependency") {
+      return "/api/graph-data";
+    }
+
+    if (activeCallEntryFunction) {
+      return `/api/call-graph-data?entryFunction=${encodeURIComponent(
+        activeCallEntryFunction,
+      )}`;
+    }
+
+    return "/api/call-graph-data";
+  }, [activeCallEntryFunction, analysisMode]);
 
   useEffect(() => {
     let isActive = true;
     const fetchStartedAt = performance.now();
+    setLoadError(null);
 
-    fetch("/api/graph-data")
+    fetch(graphEndpoint)
       .then((response) => {
         if (!response.ok) {
           throw new Error("Failed to load graph data.");
@@ -244,12 +279,18 @@ export default function App() {
           layoutMs: layoutFinishedAt - layoutStartedAt,
         });
       })
-      .catch((error: unknown) => console.error(error));
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (isActive) {
+          setLoadError(message);
+        }
+        console.error(error);
+      });
 
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [graphEndpoint]);
 
   useEffect(() => {
     const visibleGraph = applySearchHighlights(
@@ -273,6 +314,50 @@ export default function App() {
   const clearFocus = useCallback(() => {
     setFocusedNodeId(null);
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+
+      if (event.key === "Escape") {
+        clearFocus();
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [clearFocus]);
+
+  const selectAnalysisMode = useCallback((nextMode: AnalysisMode) => {
+    setAnalysisMode(nextMode);
+    setMode("graph");
+    setFocusedNodeId(null);
+    setSearchQuery("");
+  }, []);
+
+  const handleCallGraphSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const normalizedFunction = callEntryFunction.trim();
+      setActiveCallEntryFunction(normalizedFunction);
+      setFocusedNodeId(null);
+      setSearchQuery("");
+      setMode("graph");
+    },
+    [callEntryFunction],
+  );
 
   const searchMatches = useMemo(() => {
     if (!normalizedSearchQuery) {
@@ -310,12 +395,30 @@ export default function App() {
   const metricsLabel = metrics
     ? ` · fetch ${Math.round(metrics.fetchMs)}ms · layout ${Math.round(metrics.layoutMs)}ms`
     : "";
-  const statsLabel = `${nodes.length}/${graph.nodes.length} nodes · ${edges.length}/${graph.edges.length} edges · ${graph.issues.length} issues`;
+  const statsLabel = `${analysisMode === "call" ? "call graph" : "dependencies"} · ${nodes.length}/${graph.nodes.length} nodes · ${edges.length}/${graph.edges.length} edges · ${graph.issues.length} issues`;
+  const searchPlaceholder =
+    analysisMode === "call" ? "Search functions..." : "Search files...";
 
   return (
     <div style={appStyle}>
       <div style={headerStyle}>
         <div style={{ fontSize: 14, fontWeight: 700 }}>oxgraph</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => selectAnalysisMode("dependency")}
+            style={modeButtonStyle(analysisMode === "dependency")}
+          >
+            Dependencies
+          </button>
+          <button
+            type="button"
+            onClick={() => selectAnalysisMode("call")}
+            style={modeButtonStyle(analysisMode === "call")}
+          >
+            Call Graph
+          </button>
+        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button
             type="button"
@@ -332,8 +435,40 @@ export default function App() {
             Raw JSON
           </button>
         </div>
+        {analysisMode === "call" ? (
+          <form
+            onSubmit={handleCallGraphSubmit}
+            style={{ display: "flex", gap: 8, alignItems: "center" }}
+          >
+            <input
+              aria-label="Function name"
+              type="search"
+              placeholder="Function name..."
+              value={callEntryFunction}
+              onChange={(event) => setCallEntryFunction(event.target.value)}
+              style={{
+                width: 220,
+                height: 32,
+                border: "1px solid #334155",
+                borderRadius: 6,
+                background: "#0f172a",
+                color: "#e2e8f0",
+                padding: "0 10px",
+                outline: "none",
+              }}
+            />
+            <button
+              type="submit"
+              style={{ ...buttonStyleBase, background: "#0f172a" }}
+            >
+              Analyze
+            </button>
+          </form>
+        ) : null}
         <SearchBox
+          inputRef={searchInputRef}
           query={searchQuery}
+          placeholder={searchPlaceholder}
           results={searchResults}
           resultCount={searchResultCount}
           selectedNodeId={focusedNodeId}
@@ -371,9 +506,18 @@ export default function App() {
             </button>
           </div>
         ) : null}
-        <div style={{ marginLeft: "auto", fontSize: 12, color: "#94a3b8" }}>
+        <div
+          style={{
+            marginLeft: "auto",
+            minWidth: 180,
+            fontSize: 12,
+            color: "#94a3b8",
+            textAlign: "right",
+          }}
+        >
           {statsLabel}
           {metricsLabel}
+          {loadError ? ` · ${loadError}` : ""}
         </div>
       </div>
 

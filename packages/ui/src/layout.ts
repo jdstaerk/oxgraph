@@ -40,18 +40,27 @@ function fileNameFromId(id: string): string {
 }
 
 function normalizeNodeData(node: GraphNode): GraphNodeData {
+  const path = node.data?.path ?? node.data?.file ?? node.id;
+
   return {
-    label: node.data?.label ?? fileNameFromId(node.id),
-    path: node.data?.path ?? node.id,
+    label: node.data?.label ?? node.data?.name ?? fileNameFromId(node.id),
+    name: node.data?.name,
+    path,
+    file: node.data?.file,
     kind: node.data?.kind ?? "file",
     status: node.data?.status ?? "resolved",
     isEntry: node.data?.isEntry ?? false,
+    spanStart: node.data?.spanStart,
+    spanEnd: node.data?.spanEnd,
   };
 }
 
 function normalizeEdgeData(edge: GraphEdge): GraphEdgeData {
   return {
     specifier: edge.data?.specifier ?? "",
+    calleeName: edge.data?.calleeName,
+    kind: edge.data?.kind,
+    confidence: edge.data?.confidence,
     isCircular: edge.data?.isCircular ?? false,
     unresolved: edge.data?.unresolved ?? false,
   };

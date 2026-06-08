@@ -1,5 +1,10 @@
 use crate::extract_imports;
-use oxc_resolver::{ResolveOptions, Resolver, TsconfigDiscovery, TsconfigOptions};
+use crate::module_resolver::{create_module_resolver, resolve_module_path};
+use crate::path_utils::{
+    EntryPathError, label_from_path, normalize_existing_path, resolve_entry_path,
+    stable_path_string,
+};
+use oxc_resolver::Resolver;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -112,126 +117,22 @@ impl fmt::Display for GraphBuildError {
 
 impl std::error::Error for GraphBuildError {}
 
+impl From<EntryPathError> for GraphBuildError {
+    fn from(error: EntryPathError) -> Self {
+        match error {
+            EntryPathError::NotFound { path } => Self::EntryNotFound { path },
+            EntryPathError::ReadFailed { path, message } => Self::EntryReadFailed { path, message },
+        }
+    }
+}
+
 pub fn build_graph(entry_file: impl AsRef<Path>) -> Result<Graph, GraphBuildError> {
     let entry_path = resolve_entry_path(entry_file.as_ref())?;
 
-    let resolver = create_resolver(&entry_path);
+    let resolver = create_module_resolver(&entry_path);
     let mut builder = GraphBuilder::new(resolver);
     builder.walk(&entry_path, true);
     Ok(builder.graph)
-}
-
-fn resolve_entry_path(path: &Path) -> Result<PathBuf, GraphBuildError> {
-    if path.is_file() {
-        return normalize_path(path);
-    }
-
-    if path.is_dir() {
-        if let Some(candidate) = discover_entry_in_dir(path) {
-            return normalize_path(&candidate);
-        }
-
-        return Err(GraphBuildError::EntryNotFound {
-            path: path.to_path_buf(),
-        });
-    }
-
-    if path.exists() {
-        return normalize_path(path);
-    }
-
-    Err(GraphBuildError::EntryNotFound {
-        path: path.to_path_buf(),
-    })
-}
-
-fn discover_entry_in_dir(root: &Path) -> Option<PathBuf> {
-    const ROOT_ENTRY_CANDIDATES: &[&str] = &[
-        "main.tsx",
-        "main.ts",
-        "index.tsx",
-        "index.ts",
-        "App.tsx",
-        "App.ts",
-    ];
-
-    for candidate in ROOT_ENTRY_CANDIDATES {
-        let candidate_path = root.join(candidate);
-        if candidate_path.is_file() {
-            return Some(candidate_path);
-        }
-    }
-
-    const SRC_ENTRY_CANDIDATES: &[&str] = &[
-        "src/main.tsx",
-        "src/main.ts",
-        "src/index.tsx",
-        "src/index.ts",
-        "src/App.tsx",
-        "src/App.ts",
-    ];
-
-    for candidate in SRC_ENTRY_CANDIDATES {
-        let candidate_path = root.join(candidate);
-        if candidate_path.is_file() {
-            return Some(candidate_path);
-        }
-    }
-
-    None
-}
-
-fn normalize_path(path: &Path) -> Result<PathBuf, GraphBuildError> {
-    if path.exists() {
-        fs::canonicalize(path).map_err(|err| GraphBuildError::EntryReadFailed {
-            path: path.to_path_buf(),
-            message: err.to_string(),
-        })
-    } else {
-        Ok(path.to_path_buf())
-    }
-}
-
-fn create_resolver(entry_path: &Path) -> Resolver {
-    let entry_dir = entry_path.parent().unwrap_or(entry_path);
-    let tsconfig = find_tsconfig(entry_dir);
-
-    let options = ResolveOptions {
-        extensions: vec![
-            ".ts".to_string(),
-            ".tsx".to_string(),
-            ".mts".to_string(),
-            ".cts".to_string(),
-            ".js".to_string(),
-            ".jsx".to_string(),
-            ".mjs".to_string(),
-            ".cjs".to_string(),
-            ".json".to_string(),
-        ],
-        tsconfig: tsconfig.map(|path| {
-            TsconfigDiscovery::Manual(TsconfigOptions {
-                config_file: path,
-                references: oxc_resolver::TsconfigReferences::Auto,
-            })
-        }),
-        ..ResolveOptions::default()
-    };
-
-    Resolver::new(options)
-}
-
-fn find_tsconfig(start_dir: &Path) -> Option<PathBuf> {
-    let mut current = Some(start_dir);
-
-    while let Some(dir) = current {
-        let candidate = dir.join("tsconfig.json");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-        current = dir.parent();
-    }
-
-    None
 }
 
 fn node_id_from_path(path: &Path) -> String {
@@ -240,18 +141,6 @@ fn node_id_from_path(path: &Path) -> String {
 
 fn ghost_node_id(source: &Path, specifier: &str) -> String {
     format!("ghost:{}::{}", stable_path_string(source), specifier)
-}
-
-fn label_from_path(path: &Path) -> String {
-    path.file_name()
-        .and_then(|file_name| file_name.to_str())
-        .unwrap_or("")
-        .to_string()
-}
-
-fn stable_path_string(path: &Path) -> String {
-    let raw = path.to_string_lossy();
-    raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_string()
 }
 
 struct GraphBuilder {
@@ -338,15 +227,11 @@ impl GraphBuilder {
             }
         };
 
-        let current_dir = normalized.parent().unwrap_or(&normalized);
         let current_node_id = node_id_from_path(&normalized);
 
         for specifier in import_specifiers {
-            match self.resolver.resolve(current_dir, &specifier) {
-                Ok(resolution) => {
-                    let resolved_target_path =
-                        normalize_existing_path(resolution.full_path().as_path())
-                            .unwrap_or_else(|_| resolution.full_path().to_path_buf());
+            match resolve_module_path(&self.resolver, &normalized, &specifier) {
+                Ok(resolved_target_path) => {
                     let target_node_id = node_id_from_path(&resolved_target_path);
                     let is_circular = self.in_progress.contains(&resolved_target_path);
                     let edge_id = format!("{}->{}", current_node_id, target_node_id);
@@ -497,8 +382,4 @@ impl GraphBuilder {
             message,
         });
     }
-}
-
-fn normalize_existing_path(path: &Path) -> Result<PathBuf, String> {
-    fs::canonicalize(path).map_err(|err| err.to_string())
 }

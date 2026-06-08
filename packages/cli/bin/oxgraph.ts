@@ -8,7 +8,12 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import open from "open";
-import { extractGraph, type GraphData } from "@oxgraph/core";
+import {
+  extractCallGraph,
+  extractGraph,
+  type CallGraphData,
+  type GraphData,
+} from "@oxgraph/core";
 
 type CliOptions = {
   apiOnly: boolean;
@@ -96,11 +101,45 @@ function serveStatic(req: IncomingMessage, res: ServerResponse): void {
   res.end(readFileSync(staticPath));
 }
 
-function createAppServer(graphData: GraphData, apiOnly: boolean) {
+function sendJson(
+  res: ServerResponse,
+  payload: GraphData | CallGraphData,
+): void {
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(payload));
+}
+
+function sendServerError(res: ServerResponse, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  res.writeHead(500, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: message }));
+}
+
+function createAppServer(
+  targetPath: string,
+  dependencyGraphData: GraphData,
+  apiOnly: boolean,
+) {
   return createServer((req, res) => {
-    if (req.url === "/api/graph-data") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(graphData));
+    const requestUrl = new URL(req.url ?? "/", "http://localhost");
+
+    if (requestUrl.pathname === "/api/graph-data") {
+      sendJson(res, dependencyGraphData);
+      return;
+    }
+
+    if (requestUrl.pathname === "/api/call-graph-data") {
+      const entryFunction =
+        requestUrl.searchParams.get("entryFunction")?.trim() || undefined;
+
+      try {
+        console.time("Rust Call Graph Analysis");
+        const callGraphData = extractCallGraph(targetPath, entryFunction);
+        console.timeEnd("Rust Call Graph Analysis");
+        sendJson(res, callGraphData);
+      } catch (error) {
+        sendServerError(res, error);
+      }
       return;
     }
 
@@ -120,7 +159,7 @@ function listenWithFallback(
   port: number,
   attempt = 0,
 ): void {
-  const server = createAppServer(graphData, options.apiOnly);
+  const server = createAppServer(options.targetPath, graphData, options.apiOnly);
 
   server.once("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE" && attempt < 10) {

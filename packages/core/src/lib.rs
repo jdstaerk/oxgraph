@@ -1,6 +1,9 @@
 #![deny(clippy::all)]
 
+pub mod call_graph;
 pub mod graph;
+pub mod module_resolver;
+pub mod path_utils;
 pub mod visitor;
 
 use napi::bindgen_prelude::*;
@@ -13,6 +16,10 @@ use serde::Serialize;
 use std::path::Path;
 use visitor::ImportVisitor;
 
+pub use call_graph::{
+    CallConfidence, CallEdge, CallEdgeKind, CallGraph, CallGraphBuildError, CallGraphIssueKind,
+    CallNode, CallNodeKind, CallNodeStatus, build_call_graph,
+};
 pub use graph::{
     Edge, Graph, GraphBuildError, GraphIssueKind, Node, NodeKind, NodeStatus, build_graph,
 };
@@ -98,11 +105,87 @@ pub struct GraphIssueData {
     pub message: String,
 }
 
+#[derive(Debug, Serialize)]
+#[napi(object)]
+pub struct CallGraphData {
+    pub nodes: Vec<ReactFlowCallNode>,
+    pub edges: Vec<ReactFlowCallEdge>,
+    pub issues: Vec<CallGraphIssueData>,
+}
+
+#[derive(Debug, Serialize)]
+#[napi(object)]
+pub struct CallNodeData {
+    pub label: String,
+    pub name: String,
+    pub file: String,
+    pub kind: String,
+    pub status: String,
+    #[serde(rename = "spanStart")]
+    #[napi(js_name = "spanStart")]
+    pub span_start: u32,
+    #[serde(rename = "spanEnd")]
+    #[napi(js_name = "spanEnd")]
+    pub span_end: u32,
+    #[serde(rename = "isEntry")]
+    #[napi(js_name = "isEntry")]
+    pub is_entry: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[napi(object)]
+pub struct ReactFlowCallNode {
+    pub id: String,
+    #[serde(rename = "type")]
+    #[napi(js_name = "type")]
+    pub node_type: String,
+    pub data: CallNodeData,
+}
+
+#[derive(Debug, Serialize)]
+#[napi(object)]
+pub struct CallEdgeData {
+    #[serde(rename = "calleeName")]
+    #[napi(js_name = "calleeName")]
+    pub callee_name: String,
+    pub kind: String,
+    pub confidence: String,
+    pub unresolved: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[napi(object)]
+pub struct ReactFlowCallEdge {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+    pub data: CallEdgeData,
+}
+
+#[derive(Debug, Serialize)]
+#[napi(object)]
+pub struct CallGraphIssueData {
+    pub id: String,
+    pub file: String,
+    pub kind: String,
+    pub message: String,
+}
+
 #[napi]
 pub fn extract_graph(target_path: String) -> Result<GraphData> {
     let graph =
         build_graph(Path::new(&target_path)).map_err(|err| Error::from_reason(err.to_string()))?;
     Ok(graph.into())
+}
+
+#[napi]
+pub fn extract_call_graph(
+    target_path: String,
+    entry_function: Option<String>,
+) -> Result<CallGraphData> {
+    let call_graph = build_call_graph(Path::new(&target_path), entry_function.as_deref())
+        .map_err(|err| Error::from_reason(err.to_string()))?;
+    Ok(call_graph.into())
 }
 
 impl From<Graph> for GraphData {
@@ -111,6 +194,28 @@ impl From<Graph> for GraphData {
             nodes: graph.nodes.into_iter().map(ReactFlowNode::from).collect(),
             edges: graph.edges.into_iter().map(ReactFlowEdge::from).collect(),
             issues: graph.issues.into_iter().map(GraphIssueData::from).collect(),
+        }
+    }
+}
+
+impl From<CallGraph> for CallGraphData {
+    fn from(graph: CallGraph) -> Self {
+        Self {
+            nodes: graph
+                .nodes
+                .into_iter()
+                .map(ReactFlowCallNode::from)
+                .collect(),
+            edges: graph
+                .edges
+                .into_iter()
+                .map(ReactFlowCallEdge::from)
+                .collect(),
+            issues: graph
+                .issues
+                .into_iter()
+                .map(CallGraphIssueData::from)
+                .collect(),
         }
     }
 }
@@ -134,6 +239,25 @@ impl From<Node> for ReactFlowNode {
     }
 }
 
+impl From<CallNode> for ReactFlowCallNode {
+    fn from(node: CallNode) -> Self {
+        Self {
+            id: node.id,
+            node_type: "call".to_string(),
+            data: CallNodeData {
+                label: node.label,
+                name: node.name,
+                file: node.file,
+                kind: call_node_kind_to_string(&node.kind),
+                status: call_node_status_to_string(&node.status),
+                span_start: node.span_start,
+                span_end: node.span_end,
+                is_entry: node.is_entry,
+            },
+        }
+    }
+}
+
 impl From<Edge> for ReactFlowEdge {
     fn from(edge: Edge) -> Self {
         Self {
@@ -149,12 +273,39 @@ impl From<Edge> for ReactFlowEdge {
     }
 }
 
+impl From<CallEdge> for ReactFlowCallEdge {
+    fn from(edge: CallEdge) -> Self {
+        Self {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            data: CallEdgeData {
+                callee_name: edge.callee_name,
+                kind: call_edge_kind_to_string(&edge.kind),
+                confidence: call_confidence_to_string(&edge.confidence),
+                unresolved: edge.unresolved,
+            },
+        }
+    }
+}
+
 impl From<graph::GraphIssue> for GraphIssueData {
     fn from(issue: graph::GraphIssue) -> Self {
         Self {
             id: issue.id,
             file: issue.file,
             kind: graph_issue_kind_to_string(&issue.kind),
+            message: issue.message,
+        }
+    }
+}
+
+impl From<call_graph::CallGraphIssue> for CallGraphIssueData {
+    fn from(issue: call_graph::CallGraphIssue) -> Self {
+        Self {
+            id: issue.id,
+            file: issue.file,
+            kind: call_graph_issue_kind_to_string(&issue.kind),
             message: issue.message,
         }
     }
@@ -179,11 +330,59 @@ fn node_status_to_string(status: &NodeStatus) -> String {
     .to_string()
 }
 
+fn call_node_kind_to_string(kind: &CallNodeKind) -> String {
+    match kind {
+        CallNodeKind::Function => "function",
+        CallNodeKind::Method => "method",
+        CallNodeKind::ArrowFunction => "arrowFunction",
+        CallNodeKind::Unresolved => "unresolved",
+    }
+    .to_string()
+}
+
+fn call_node_status_to_string(status: &CallNodeStatus) -> String {
+    match status {
+        CallNodeStatus::Resolved => "resolved",
+        CallNodeStatus::Unresolved => "unresolved",
+    }
+    .to_string()
+}
+
+fn call_edge_kind_to_string(kind: &CallEdgeKind) -> String {
+    match kind {
+        CallEdgeKind::Direct => "direct",
+        CallEdgeKind::Import => "import",
+        CallEdgeKind::Method => "method",
+        CallEdgeKind::Unresolved => "unresolved",
+    }
+    .to_string()
+}
+
+fn call_confidence_to_string(confidence: &CallConfidence) -> String {
+    match confidence {
+        CallConfidence::High => "high",
+        CallConfidence::Medium => "medium",
+        CallConfidence::Low => "low",
+    }
+    .to_string()
+}
+
 fn graph_issue_kind_to_string(kind: &GraphIssueKind) -> String {
     match kind {
         GraphIssueKind::ReadError => "readError",
         GraphIssueKind::ParseError => "parseError",
         GraphIssueKind::ResolveError => "resolveError",
+    }
+    .to_string()
+}
+
+fn call_graph_issue_kind_to_string(kind: &CallGraphIssueKind) -> String {
+    match kind {
+        CallGraphIssueKind::ReadError => "readError",
+        CallGraphIssueKind::ParseError => "parseError",
+        CallGraphIssueKind::ResolveError => "resolveError",
+        CallGraphIssueKind::SemanticError => "semanticError",
+        CallGraphIssueKind::EntryFunctionNotFound => "entryFunctionNotFound",
     }
     .to_string()
 }

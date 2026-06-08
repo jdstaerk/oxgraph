@@ -4,11 +4,14 @@ import {
   type ChangeEvent,
   type CSSProperties,
   type KeyboardEvent,
+  type Ref,
 } from "react";
 import type { LayoutedGraphNode } from "./graphTypes";
 
 type SearchBoxProps = {
+  inputRef?: Ref<HTMLInputElement>;
   query: string;
+  placeholder: string;
   results: LayoutedGraphNode[];
   resultCount: number;
   selectedNodeId: string | null;
@@ -74,7 +77,9 @@ function resultButtonStyle(isSelected: boolean): CSSProperties {
 }
 
 export default function SearchBox({
+  inputRef,
   query,
+  placeholder,
   results,
   resultCount,
   selectedNodeId,
@@ -129,9 +134,10 @@ export default function SearchBox({
       }}
     >
       <input
-        aria-label="Search files"
+        ref={inputRef}
+        aria-label={placeholder}
         type="search"
-        placeholder="Search files..."
+        placeholder={placeholder}
         value={query}
         onChange={handleChange}
         onFocus={() => setIsOpen(true)}
@@ -205,7 +211,7 @@ export default function SearchBox({
                 fontSize: 12,
               }}
             >
-              No matching files
+              No matching results
             </div>
           )}
         </div>

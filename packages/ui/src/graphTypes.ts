@@ -1,6 +1,13 @@
 import type { Edge, Node } from "reactflow";
 
-export type GraphNodeKind = "entry" | "file" | "ghost";
+export type GraphNodeKind =
+  | "entry"
+  | "file"
+  | "ghost"
+  | "function"
+  | "method"
+  | "arrowFunction"
+  | "unresolved";
 export type GraphNodeStatus =
   | "resolved"
   | "unresolved"
@@ -9,17 +16,24 @@ export type GraphNodeStatus =
 
 export type GraphNodeData = {
   label: string;
+  name?: string;
   path: string;
+  file?: string;
   kind: GraphNodeKind;
   status: GraphNodeStatus;
   isEntry: boolean;
+  spanStart?: number;
+  spanEnd?: number;
   focused?: boolean;
   searchMatch?: boolean;
 };
 
 export type GraphEdgeData = {
-  specifier: string;
-  isCircular: boolean;
+  specifier?: string;
+  calleeName?: string;
+  kind?: string;
+  confidence?: string;
+  isCircular?: boolean;
   unresolved: boolean;
 };
 

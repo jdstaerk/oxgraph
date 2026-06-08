@@ -586,4 +586,5 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
+module.exports.extractCallGraph = nativeBinding.extractCallGraph
 module.exports.extractGraph = nativeBinding.extractGraph
