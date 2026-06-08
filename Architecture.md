@@ -34,7 +34,6 @@ The visualization dashboard is a React Single Page Application (SPA) designed to
 **CRITICAL RULE:** This repository strictly avoids traditional Node.js tooling overhead.
 - We do **NOT** use ESLint or Prettier.
 - We live entirely within the Oxidation Compiler ecosystem.
-- Linting is performed via **`oxlint`**.
-- Code formatting is handled via **`oxc format`**.
+- Linting and basic code formatting are performed via **`oxlint`** (using the `--fix` flag).
 
 Welcome aboard, and happy coding!

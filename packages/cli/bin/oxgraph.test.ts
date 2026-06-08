@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
-import { createAppServer } from "./oxgraph";
-import { GraphData, CallGraphData } from "@oxgraph/core";
+import { createAppServer } from "./oxgraph.js";
+import type { GraphData } from "@oxgraph/core";
 
 vi.mock("@oxgraph/core", () => ({
   extractGraph: vi.fn(() => ({ nodes: [], edges: [] })),
@@ -10,8 +10,21 @@ vi.mock("@oxgraph/core", () => ({
 
 describe("CLI Server", () => {
   const mockGraphData: GraphData = {
-    nodes: [{ id: "root", data: { label: "root", kind: "file", status: "resolved", isEntry: true } }],
+    nodes: [
+      {
+        id: "root",
+        type: "custom",
+        data: {
+          label: "root",
+          path: "/root",
+          kind: "file",
+          status: "resolved",
+          isEntry: true,
+        },
+      },
+    ],
     edges: [],
+    issues: [],
   };
 
   it("serves the dependency graph at /api/graph-data", async () => {
@@ -24,7 +37,9 @@ describe("CLI Server", () => {
 
   it("serves the call graph at /api/call-graph-data", async () => {
     const server = createAppServer("dummy-path", mockGraphData, true);
-    const response = await request(server).get("/api/call-graph-data?entryFunction=start");
+    const response = await request(server).get(
+      "/api/call-graph-data?entryFunction=start",
+    );
 
     expect(response.status).toBe(200);
     expect(response.body.nodes).toBeDefined();

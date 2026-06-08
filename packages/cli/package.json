@@ -10,8 +10,10 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json && node dist/bin/oxgraph.js --api-only --no-open",
     "test": "vitest run",
+    "type-check": "tsc -p tsconfig.json --noEmit",
     "lint": "oxlint .",
-    "format": "oxc format ."
+    "format:fix": "oxlint . --fix",
+    "format:check": "oxlint ."
   },
   "dependencies": {
     "@oxgraph/core": "workspace:*",

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { getLayoutedElements } from "./layout";
-import { GraphNode, GraphEdge } from "./graphTypes";
+import type { GraphNode, GraphEdge } from "./graphTypes";
 
 // Mock ELK because it's a heavy dependency and we just want to verify our integration/contract
 vi.mock("elkjs/lib/elk.bundled.js", () => {
@@ -24,8 +24,8 @@ vi.mock("elkjs/lib/elk.bundled.js", () => {
 describe("layouting service", () => {
   it("correctly returns positioned nodes respecting ELK constraints", async () => {
     const nodes: GraphNode[] = [
-      { id: "1", position: { x: 0, y: 0 }, data: { label: "Node 1" } },
-      { id: "2", position: { x: 0, y: 0 }, data: { label: "Node 2" } },
+      { id: "1", data: { label: "Node 1" } },
+      { id: "2", data: { label: "Node 2" } },
     ];
     const edges: GraphEdge[] = [
       { id: "e1-2", source: "1", target: "2" },

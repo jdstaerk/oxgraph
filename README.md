@@ -53,8 +53,10 @@ The project uses a structured script pattern across all packages (`core`, `ui`, 
 | :--- | :--- | :--- |
 | **Build** | `pnpm run build` | `pnpm run build:core` |
 | **Test** | `pnpm run test` | `pnpm run test:ui` |
+| **Type Check** | `pnpm run type-check` | `pnpm run type-check:cli` |
 | **Lint** | `pnpm run lint` | `pnpm run lint:cli` |
-| **Format** | `pnpm run format` | `pnpm run format:core` |
+| **Format (Fix)** | `pnpm run format:fix` | `pnpm run format:fix:core` |
+| **Format (Check)** | `pnpm run format:check` | `pnpm run format:check:ui` |
 
 ## Testing
 
