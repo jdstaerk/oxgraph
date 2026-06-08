@@ -317,3 +317,57 @@ function sibling() {}
 
     fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn in_memory_domain_only_analysis() {
+    let source = r#"
+        import { useState } from 'react';
+        import { helper } from './util';
+
+        function Local() {
+            return <div />;
+        }
+
+        export function App() {
+            useState();
+            helper();
+            Local();
+            console.log('test');
+            return <Local />;
+        }
+    "#;
+
+    let file_path = PathBuf::from("src/App.tsx");
+    let project_root = PathBuf::from("src");
+    let resolver = oxc_resolver::Resolver::default();
+    let internal_aliases = vec![];
+
+    let analysis = analyze_source_text(
+        source,
+        &file_path,
+        &resolver,
+        &project_root,
+        &internal_aliases,
+    );
+
+    let node_names: HashSet<&str> = analysis.nodes.iter().map(|n| n.name.as_str()).collect();
+    
+    // Should track internal functions and JSX usage
+    assert!(node_names.contains("Local"));
+    assert!(node_names.contains("App"));
+    
+    // Should NOT contain external/native calls in nodes (Domain-Only)
+    assert!(!node_names.contains("useState"));
+    assert!(!node_names.contains("log"));
+    assert!(!node_names.contains("div"));
+
+    let edge_callees: HashSet<&str> = analysis.pending_edges.iter().map(|e| e.callee_name.as_str()).collect();
+    
+    // Should track calls to internal functions
+    assert!(edge_callees.contains("Local"));
+    
+    // Should NOT track calls to external/native
+    assert!(!edge_callees.contains("useState"));
+    assert!(!edge_callees.contains("log"));
+}
+

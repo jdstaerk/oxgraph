@@ -20,10 +20,10 @@ pub(super) fn analyze_file(
     project_root: &Path,
     internal_aliases: &[InternalAliasPattern],
 ) -> FileAnalysis {
-    let mut analysis = FileAnalysis::new();
     let source_text = match fs::read_to_string(file_path) {
-        Ok(source_text) => source_text,
+        Ok(text) => text,
         Err(err) => {
+            let mut analysis = FileAnalysis::new();
             analysis.issues.push(AnalysisIssue {
                 file: stable_path_string(file_path),
                 kind: CallGraphIssueKind::ReadError,
@@ -33,11 +33,28 @@ pub(super) fn analyze_file(
         }
     };
 
+    analyze_source_text(
+        &source_text,
+        file_path,
+        resolver,
+        project_root,
+        internal_aliases,
+    )
+}
+
+pub(crate) fn analyze_source_text(
+    source_text: &str,
+    file_path: &Path,
+    resolver: &Resolver,
+    project_root: &Path,
+    internal_aliases: &[InternalAliasPattern],
+) -> FileAnalysis {
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(file_path).unwrap_or_default();
-    let parse_result = Parser::new(&allocator, &source_text, source_type).parse();
+    let parse_result = Parser::new(&allocator, source_text, source_type).parse();
 
     if !parse_result.errors.is_empty() {
+        let mut analysis = FileAnalysis::new();
         analysis.issues.push(AnalysisIssue {
             file: stable_path_string(file_path),
             kind: CallGraphIssueKind::ParseError,

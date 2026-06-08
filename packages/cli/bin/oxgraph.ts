@@ -115,7 +115,7 @@ function sendServerError(res: ServerResponse, error: unknown): void {
   res.end(JSON.stringify({ error: message }));
 }
 
-function createAppServer(
+export function createAppServer(
   targetPath: string,
   dependencyGraphData: GraphData,
   apiOnly: boolean,

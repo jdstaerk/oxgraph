@@ -10,6 +10,7 @@
   "scripts": {
     "clean": "shx rm -rf packages/core/target packages/core/*.node packages/ui/dist packages/cli/public-ui packages/cli/dist",
     "lint": "oxlint",
+    "test": "pnpm -r run test",
     "format": "oxc format",
     "build:core": "pnpm --filter @oxgraph/core run build",
     "build:ui": "pnpm --filter @oxgraph/ui run build",

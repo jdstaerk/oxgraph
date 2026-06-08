@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 
 mod ast_utils;
 mod file_analyzer;
+#[cfg(test)]
+pub(crate) use file_analyzer::analyze_source_text;
 mod filter;
 mod internal_model;
 mod model;

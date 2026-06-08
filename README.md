@@ -166,6 +166,21 @@ The Rust core returns graph data in a React Flow-compatible shape:
 
 Semantic metadata lives under `data`. The root-level `type` field is reserved for React Flow and is set to `custom`.
 
+## Testing
+
+The project has a comprehensive testing strategy across all layers.
+
+Run all tests:
+
+```bash
+pnpm run test
+```
+
+This will execute:
+- **Rust Core:** `cargo test` (AST parsing and graph logic)
+- **UI:** `vitest` (Layouting and component logic)
+- **CLI:** `vitest` (API integration tests)
+
 ## Useful Commands
 
 ```bash

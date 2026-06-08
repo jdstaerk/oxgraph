@@ -1,17 +1,17 @@
 use super::model::{CallConfidence, CallEdgeKind, CallGraphIssueKind, CallNode};
 use std::path::PathBuf;
 
-pub(super) struct FileAnalysis {
-    pub(super) nodes: Vec<CallNode>,
-    pub(super) pending_edges: Vec<PendingCallEdge>,
-    pub(super) exports: std::collections::HashMap<String, ExportTarget>,
-    pub(super) star_re_exports: Vec<PathBuf>,
-    pub(super) dependencies: Vec<PathBuf>,
-    pub(super) issues: Vec<AnalysisIssue>,
+pub(crate) struct FileAnalysis {
+    pub(crate) nodes: Vec<CallNode>,
+    pub(crate) pending_edges: Vec<PendingCallEdge>,
+    pub(crate) exports: std::collections::HashMap<String, ExportTarget>,
+    pub(crate) star_re_exports: Vec<PathBuf>,
+    pub(crate) dependencies: Vec<PathBuf>,
+    pub(crate) issues: Vec<AnalysisIssue>,
 }
 
 impl FileAnalysis {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             nodes: Vec::new(),
             pending_edges: Vec::new(),
@@ -24,14 +24,14 @@ impl FileAnalysis {
 }
 
 #[derive(Clone)]
-pub(super) struct AnalysisIssue {
-    pub(super) file: String,
-    pub(super) kind: CallGraphIssueKind,
-    pub(super) message: String,
+pub(crate) struct AnalysisIssue {
+    pub(crate) file: String,
+    pub(crate) kind: CallGraphIssueKind,
+    pub(crate) message: String,
 }
 
 #[derive(Clone)]
-pub(super) enum ExportTarget {
+pub(crate) enum ExportTarget {
     LocalNode(String),
     ReExport {
         source_path: PathBuf,
@@ -40,22 +40,22 @@ pub(super) enum ExportTarget {
 }
 
 #[derive(Clone)]
-pub(super) struct ImportBinding {
-    pub(super) source_path: PathBuf,
-    pub(super) export_name: String,
+pub(crate) struct ImportBinding {
+    pub(crate) source_path: PathBuf,
+    pub(crate) export_name: String,
 }
 
 #[derive(Clone)]
-pub(super) struct PendingCallEdge {
-    pub(super) source: String,
-    pub(super) target: PendingCallTarget,
-    pub(super) callee_name: String,
-    pub(super) kind: CallEdgeKind,
-    pub(super) confidence: CallConfidence,
+pub(crate) struct PendingCallEdge {
+    pub(crate) source: String,
+    pub(crate) target: PendingCallTarget,
+    pub(crate) callee_name: String,
+    pub(crate) kind: CallEdgeKind,
+    pub(crate) confidence: CallConfidence,
 }
 
 #[derive(Clone)]
-pub(super) enum PendingCallTarget {
+pub(crate) enum PendingCallTarget {
     Node(String),
     Export {
         source_path: PathBuf,

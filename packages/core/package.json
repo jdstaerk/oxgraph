@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build": "napi build --platform --release",
-    "dev": "napi build --platform"
+    "dev": "napi build --platform",
+    "test": "cargo test"
   },
   "keywords": [],
   "author": "",
