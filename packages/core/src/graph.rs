@@ -1,7 +1,8 @@
 use crate::extract_imports;
 use crate::module_resolver::{create_module_resolver, resolve_module_path};
 use crate::path_utils::{
-    EntryPathError, label_from_path, normalize_existing_path, resolve_entry_path,
+    EntryPathError, find_project_root, is_project_path, is_project_source_file,
+    is_supported_source_file, label_from_path, normalize_existing_path, resolve_entry_path,
     stable_path_string,
 };
 use oxc_resolver::Resolver;
@@ -40,6 +41,7 @@ impl Default for Graph {
 pub enum NodeKind {
     Entry,
     File,
+    External,
     Ghost,
 }
 
@@ -74,7 +76,7 @@ pub struct Edge {
     pub unresolved: bool,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum GraphIssueKind {
     ReadError,
@@ -128,9 +130,10 @@ impl From<EntryPathError> for GraphBuildError {
 
 pub fn build_graph(entry_file: impl AsRef<Path>) -> Result<Graph, GraphBuildError> {
     let entry_path = resolve_entry_path(entry_file.as_ref())?;
+    let project_root = find_project_root(&entry_path);
 
     let resolver = create_module_resolver(&entry_path);
-    let mut builder = GraphBuilder::new(resolver);
+    let mut builder = GraphBuilder::new(resolver, project_root);
     builder.walk(&entry_path, true);
     Ok(builder.graph)
 }
@@ -143,25 +146,50 @@ fn ghost_node_id(source: &Path, specifier: &str) -> String {
     format!("ghost:{}::{}", stable_path_string(source), specifier)
 }
 
+fn external_node_id(specifier: &str) -> String {
+    format!("external:{}", specifier)
+}
+
+fn status_priority(status: &NodeStatus) -> u8 {
+    match status {
+        NodeStatus::Resolved => 0,
+        NodeStatus::Unresolved => 1,
+        NodeStatus::SyntaxError => 2,
+        NodeStatus::ReadError => 3,
+    }
+}
+
+fn merge_node_status(current: &NodeStatus, incoming: NodeStatus) -> NodeStatus {
+    if status_priority(&incoming) >= status_priority(current) {
+        incoming
+    } else {
+        current.clone()
+    }
+}
+
 struct GraphBuilder {
     graph: Graph,
     resolver: Resolver,
+    project_root: PathBuf,
     visited: HashSet<PathBuf>,
     in_progress: HashSet<PathBuf>,
     node_index: HashMap<String, usize>,
     ghost_index: HashMap<String, String>,
+    edge_index: HashSet<String>,
     issue_counter: usize,
 }
 
 impl GraphBuilder {
-    fn new(resolver: Resolver) -> Self {
+    fn new(resolver: Resolver, project_root: PathBuf) -> Self {
         Self {
             graph: Graph::default(),
             resolver,
+            project_root,
             visited: HashSet::new(),
             in_progress: HashSet::new(),
             node_index: HashMap::new(),
             ghost_index: HashMap::new(),
+            edge_index: HashSet::new(),
             issue_counter: 0,
         }
     }
@@ -199,6 +227,11 @@ impl GraphBuilder {
             Some(&normalized),
         );
 
+        if !is_supported_source_file(&normalized) {
+            self.visited.insert(normalized);
+            return;
+        }
+
         if self.visited.contains(&normalized) {
             return;
         }
@@ -232,12 +265,28 @@ impl GraphBuilder {
         for specifier in import_specifiers {
             match resolve_module_path(&self.resolver, &normalized, &specifier) {
                 Ok(resolved_target_path) => {
+                    if !is_project_path(&resolved_target_path, &self.project_root) {
+                        let external_id = external_node_id(&specifier);
+                        self.upsert_external_node(
+                            &external_id,
+                            &specifier,
+                            &stable_path_string(&resolved_target_path),
+                        );
+                        self.push_edge(
+                            format!("{}->{}", current_node_id, external_id),
+                            current_node_id.clone(),
+                            external_id,
+                            specifier,
+                            false,
+                            false,
+                        );
+                        continue;
+                    }
+
                     let target_node_id = node_id_from_path(&resolved_target_path);
                     let is_circular = self.in_progress.contains(&resolved_target_path);
-                    let edge_id = format!("{}->{}", current_node_id, target_node_id);
-
                     self.push_edge(
-                        edge_id,
+                        format!("{}->{}", current_node_id, target_node_id),
                         current_node_id.clone(),
                         target_node_id.clone(),
                         specifier,
@@ -253,7 +302,10 @@ impl GraphBuilder {
                         Some(&resolved_target_path),
                     );
 
-                    if !is_circular && !self.visited.contains(&resolved_target_path) {
+                    if !is_circular
+                        && !self.visited.contains(&resolved_target_path)
+                        && is_project_source_file(&resolved_target_path, &self.project_root)
+                    {
                         self.walk(&resolved_target_path, false);
                     }
                 }
@@ -304,9 +356,14 @@ impl GraphBuilder {
 
         if let Some(index) = self.node_index.get(&id).copied() {
             let node = &mut self.graph.nodes[index];
-            node.kind = kind;
-            node.status = status;
-            node.is_entry = is_entry;
+            let was_entry = node.is_entry || matches!(node.kind, NodeKind::Entry);
+            node.kind = if was_entry || is_entry {
+                NodeKind::Entry
+            } else {
+                kind
+            };
+            node.status = merge_node_status(&node.status, status);
+            node.is_entry = was_entry || is_entry;
             node.label = label;
             node.path = serialized_path;
             return;
@@ -322,6 +379,29 @@ impl GraphBuilder {
             is_entry,
         });
         self.node_index.insert(id, index);
+    }
+
+    fn upsert_external_node(&mut self, external_id: &str, label: &str, resolved_path: &str) {
+        if let Some(index) = self.node_index.get(external_id).copied() {
+            let node = &mut self.graph.nodes[index];
+            node.kind = NodeKind::External;
+            node.status = NodeStatus::Resolved;
+            node.is_entry = false;
+            node.label = label.to_string();
+            node.path = resolved_path.to_string();
+            return;
+        }
+
+        let index = self.graph.nodes.len();
+        self.graph.nodes.push(Node {
+            id: external_id.to_string(),
+            label: label.to_string(),
+            path: resolved_path.to_string(),
+            kind: NodeKind::External,
+            status: NodeStatus::Resolved,
+            is_entry: false,
+        });
+        self.node_index.insert(external_id.to_string(), index);
     }
 
     fn upsert_ghost_node(&mut self, ghost_id: &str, label: &str) {
@@ -363,6 +443,10 @@ impl GraphBuilder {
         is_circular: bool,
         unresolved: bool,
     ) {
+        if !self.edge_index.insert(id.clone()) {
+            return;
+        }
+
         self.graph.edges.push(Edge {
             id,
             source,
@@ -381,5 +465,169 @@ impl GraphBuilder {
             kind,
             message,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn create_test_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("oxgraph-graph-{}-{}", name, nanos));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn keeps_external_packages_as_leaf_nodes() {
+        let dir = create_test_dir("external-leaf");
+        fs::write(dir.join("package.json"), "{}").unwrap();
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::create_dir_all(dir.join("node_modules/external-pkg")).unwrap();
+        fs::write(
+            dir.join("src/main.ts"),
+            "import { local } from './local';\nimport external from 'external-pkg';\nlocal();\nexternal();\n",
+        )
+        .unwrap();
+        fs::write(dir.join("src/local.ts"), "export function local() {}\n").unwrap();
+        fs::write(
+            dir.join("node_modules/external-pkg/package.json"),
+            r#"{"main":"index.js"}"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("node_modules/external-pkg/index.js"),
+            "export default 1;\n",
+        )
+        .unwrap();
+
+        let graph = build_graph(dir.join("src/main.ts")).unwrap();
+
+        assert!(graph.nodes.iter().any(|node| {
+            node.label == "external-pkg"
+                && node.kind == NodeKind::External
+                && node.status == NodeStatus::Resolved
+        }));
+        assert!(graph.nodes.iter().any(|node| node.label == "local.ts"));
+        assert!(graph.issues.is_empty());
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn preserves_entry_metadata_when_cycle_points_back_to_entry() {
+        let dir = create_test_dir("entry-cycle");
+        fs::write(dir.join("package.json"), "{}").unwrap();
+        fs::write(dir.join("main.ts"), "import './dep';\n").unwrap();
+        fs::write(dir.join("dep.ts"), "import './main';\n").unwrap();
+
+        let graph = build_graph(dir.join("main.ts")).unwrap();
+        let entry_id = stable_path_string(&fs::canonicalize(dir.join("main.ts")).unwrap());
+        let entry = graph.nodes.iter().find(|node| node.id == entry_id).unwrap();
+
+        assert_eq!(entry.kind, NodeKind::Entry);
+        assert!(entry.is_entry);
+        assert!(graph.edges.iter().any(|edge| edge.is_circular));
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn dedupes_repeated_edges_between_the_same_files() {
+        let dir = create_test_dir("dedupe-edges");
+        fs::write(dir.join("package.json"), "{}").unwrap();
+        fs::write(
+            dir.join("main.ts"),
+            "import { a } from './util';\nimport { b } from './util';\na();\nb();\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("util.ts"),
+            "export function a() {}\nexport function b() {}\n",
+        )
+        .unwrap();
+
+        let graph = build_graph(dir.join("main.ts")).unwrap();
+        let main_id = stable_path_string(&fs::canonicalize(dir.join("main.ts")).unwrap());
+        let util_id = stable_path_string(&fs::canonicalize(dir.join("util.ts")).unwrap());
+        let repeated_edges = graph
+            .edges
+            .iter()
+            .filter(|edge| edge.source == main_id && edge.target == util_id)
+            .count();
+
+        assert_eq!(repeated_edges, 1);
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn does_not_parse_unsupported_project_files() {
+        let dir = create_test_dir("unsupported-leaf");
+        fs::write(dir.join("package.json"), "{}").unwrap();
+        fs::write(dir.join("main.ts"), "import data from './data.json';\n").unwrap();
+        fs::write(
+            dir.join("data.json"),
+            "{ invalid json is still not javascript",
+        )
+        .unwrap();
+
+        let graph = build_graph(dir.join("main.ts")).unwrap();
+
+        assert!(graph.nodes.iter().any(|node| node.label == "data.json"));
+        assert!(
+            graph
+                .issues
+                .iter()
+                .all(|issue| issue.kind != GraphIssueKind::ParseError)
+        );
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn keeps_parse_error_status_when_file_is_referenced_again() {
+        let dir = create_test_dir("sticky-parse-error");
+        fs::write(dir.join("package.json"), "{}").unwrap();
+        fs::write(dir.join("main.ts"), "import './bad';\nimport './other';\n").unwrap();
+        fs::write(dir.join("other.ts"), "import './bad';\n").unwrap();
+        fs::write(dir.join("bad.ts"), "export function broken( {\n").unwrap();
+
+        let graph = build_graph(dir.join("main.ts")).unwrap();
+        let bad_id = stable_path_string(&fs::canonicalize(dir.join("bad.ts")).unwrap());
+        let bad_node = graph.nodes.iter().find(|node| node.id == bad_id).unwrap();
+
+        assert_eq!(bad_node.status, NodeStatus::SyntaxError);
+        assert!(
+            graph
+                .issues
+                .iter()
+                .any(|issue| issue.kind == GraphIssueKind::ParseError)
+        );
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn discovers_jsx_entry_when_directory_is_passed() {
+        let dir = create_test_dir("jsx-entry");
+        fs::write(dir.join("package.json"), "{}").unwrap();
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(dir.join("src/main.jsx"), "import './view';\n").unwrap();
+        fs::write(dir.join("src/view.jsx"), "export function View() {}\n").unwrap();
+
+        let graph = build_graph(&dir).unwrap();
+
+        assert!(graph.nodes.iter().any(|node| {
+            node.label == "main.jsx" && node.kind == NodeKind::Entry && node.is_entry
+        }));
+        assert!(graph.nodes.iter().any(|node| node.label == "view.jsx"));
+
+        fs::remove_dir_all(dir).ok();
     }
 }

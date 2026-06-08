@@ -15,7 +15,8 @@
     "build": "pnpm run build:core && pnpm run build:ui && pnpm run copy:ui && pnpm run build:cli",
     "dev:api": "pnpm --filter @oxgraph/cli run dev:api --",
     "dev:ui": "pnpm --filter @oxgraph/ui run dev",
-    "oxgraph": "pnpm run build && node packages/cli/dist/bin/oxgraph.js"
+    "oxgraph": "node packages/cli/dist/bin/oxgraph.js",
+    "oxgraph:build": "pnpm run build && node packages/cli/dist/bin/oxgraph.js"
   },
   "keywords": [],
   "author": "",

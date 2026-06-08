@@ -3,6 +3,7 @@ import type { Edge, Node } from "reactflow";
 export type GraphNodeKind =
   | "entry"
   | "file"
+  | "external"
   | "ghost"
   | "function"
   | "method"

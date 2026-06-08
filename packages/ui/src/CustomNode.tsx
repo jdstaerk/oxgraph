@@ -30,13 +30,25 @@ function borderFor(data: GraphNodeData): string {
   return "1px solid #475569";
 }
 
+function backgroundFor(data: GraphNodeData): string {
+  if (data.kind === "ghost") {
+    return "#3f1d1d";
+  }
+
+  if (data.kind === "external") {
+    return "#27272a";
+  }
+
+  return "#1e293b";
+}
+
 export default function CustomNode({ data }: NodeProps<GraphNodeData>) {
   return (
     <div
       title={data.path || data.label}
       style={{
         ...nodeStyleBase,
-        background: data.kind === "ghost" ? "#3f1d1d" : "#1e293b",
+        background: backgroundFor(data),
         border: borderFor(data),
       }}
     >

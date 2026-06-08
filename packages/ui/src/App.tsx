@@ -14,6 +14,7 @@ import ReactFlow, {
   useNodesState,
   type NodeMouseHandler,
   type NodeTypes,
+  type ReactFlowInstance,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import CustomNode from "./CustomNode";
@@ -25,6 +26,15 @@ import type {
   GraphResponse,
   LayoutedGraph,
 } from "./graphTypes";
+import {
+  applySearchHighlights,
+  emptyGraph,
+  emptyLayoutedGraph,
+  filterGraphByFocus,
+  matchesSearchQuery,
+  normalizeGraphResponse,
+  normalizeSearchQuery,
+} from "./graphUtils";
 import { getLayoutedElements } from "./layout";
 
 type AnalysisMode = "dependency" | "call";
@@ -82,22 +92,6 @@ const rawJsonStyle: CSSProperties = {
   whiteSpace: "pre",
 };
 
-function emptyGraph(): GraphPayload {
-  return { nodes: [], edges: [], issues: [] };
-}
-
-function emptyLayoutedGraph(): LayoutedGraph {
-  return { nodes: [], edges: [] };
-}
-
-function normalizeGraphResponse(response: GraphResponse): GraphPayload {
-  return {
-    nodes: response.nodes ?? [],
-    edges: response.edges ?? [],
-    issues: response.issues ?? [],
-  };
-}
-
 function modeButtonStyle(isActive: boolean): CSSProperties {
   return {
     ...buttonStyleBase,
@@ -105,114 +99,28 @@ function modeButtonStyle(isActive: boolean): CSSProperties {
   };
 }
 
-function normalizeSearchQuery(query: string): string {
-  return query.trim().toLowerCase();
-}
+async function graphResponseErrorMessage(response: Response): Promise<string> {
+  const fallback = `Failed to load graph data (${response.status} ${response.statusText})`;
+  const contentType = response.headers.get("content-type") ?? "";
 
-function nodeSearchText(node: LayoutedGraph["nodes"][number]): string {
-  return `${node.data.label} ${node.data.name ?? ""} ${node.data.path} ${node.data.file ?? ""} ${node.id}`.toLowerCase();
-}
-
-function matchesSearchQuery(
-  node: LayoutedGraph["nodes"][number],
-  normalizedQuery: string,
-): boolean {
-  return normalizedQuery.length > 0 && nodeSearchText(node).includes(normalizedQuery);
-}
-
-function applySearchHighlights(
-  graph: LayoutedGraph,
-  normalizedQuery: string,
-): LayoutedGraph {
-  if (!normalizedQuery) {
-    return graph;
-  }
-
-  return {
-    nodes: graph.nodes.map((node) => ({
-      ...node,
-      data: {
-        ...node.data,
-        searchMatch: matchesSearchQuery(node, normalizedQuery),
-      },
-    })),
-    edges: graph.edges,
-  };
-}
-
-function collectFocusedNodeIds(
-  startNodeId: string,
-  edges: LayoutedGraph["edges"],
-) {
-  const relatedNodeIds = new Set<string>([startNodeId]);
-  const outgoingQueue = [startNodeId];
-  const incomingQueue = [startNodeId];
-
-  while (outgoingQueue.length > 0) {
-    const currentNodeId = outgoingQueue.shift();
-    if (!currentNodeId) {
-      continue;
+  try {
+    if (contentType.includes("application/json")) {
+      const body = (await response.json()) as { error?: unknown };
+      return typeof body.error === "string" && body.error.trim()
+        ? body.error
+        : fallback;
     }
 
-    for (const edge of edges) {
-      if (edge.source !== currentNodeId || relatedNodeIds.has(edge.target)) {
-        continue;
-      }
-
-      relatedNodeIds.add(edge.target);
-      outgoingQueue.push(edge.target);
-    }
+    const text = await response.text();
+    return text.trim() ? `${fallback}: ${text.trim()}` : fallback;
+  } catch {
+    return fallback;
   }
-
-  while (incomingQueue.length > 0) {
-    const currentNodeId = incomingQueue.shift();
-    if (!currentNodeId) {
-      continue;
-    }
-
-    for (const edge of edges) {
-      if (edge.target !== currentNodeId || relatedNodeIds.has(edge.source)) {
-        continue;
-      }
-
-      relatedNodeIds.add(edge.source);
-      incomingQueue.push(edge.source);
-    }
-  }
-
-  return relatedNodeIds;
-}
-
-function filterGraphByFocus(
-  graph: LayoutedGraph,
-  focusedNodeId: string | null,
-): LayoutedGraph {
-  if (!focusedNodeId) {
-    return graph;
-  }
-
-  const relatedNodeIds = collectFocusedNodeIds(focusedNodeId, graph.edges);
-  const visibleNodes = graph.nodes
-    .filter((node) => relatedNodeIds.has(node.id))
-    .map((node) => ({
-      ...node,
-      data: {
-        ...node.data,
-        focused: node.id === focusedNodeId,
-      },
-      selected: node.id === focusedNodeId,
-    }));
-  const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
-  const visibleEdges = graph.edges.filter(
-    (edge) =>
-      visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target),
-  );
-
-  return { nodes: visibleNodes, edges: visibleEdges };
 }
 
 export default function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const reactFlowInstanceRef = useRef<ReactFlowInstance | null>(null);
   const [analysisMode, setAnalysisMode] =
     useState<AnalysisMode>("dependency");
   const [mode, setMode] = useState<GraphMode>("graph");
@@ -225,6 +133,7 @@ export default function App() {
   const [activeCallEntryFunction, setActiveCallEntryFunction] = useState("");
   const [metrics, setMetrics] = useState<GraphMetrics | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdgeData>([]);
   const normalizedSearchQuery = useMemo(
@@ -248,18 +157,24 @@ export default function App() {
   useEffect(() => {
     let isActive = true;
     const fetchStartedAt = performance.now();
-    setLoadError(null);
 
-    fetch(graphEndpoint)
-      .then((response) => {
+    setIsLoading(true);
+    setLoadError(null);
+    setMetrics(null);
+    setFocusedNodeId(null);
+    setGraph(emptyGraph());
+    setLayoutedGraph(emptyLayoutedGraph());
+
+    const fetchGraph = async () => {
+      try {
+        const response = await fetch(graphEndpoint);
         if (!response.ok) {
-          throw new Error("Failed to load graph data.");
+          throw new Error(await graphResponseErrorMessage(response));
         }
-        return response.json() as Promise<GraphResponse>;
-      })
-      .then(async (response) => {
+
+        const responseBody = (await response.json()) as GraphResponse;
         const fetchFinishedAt = performance.now();
-        const graphPayload = normalizeGraphResponse(response);
+        const graphPayload = normalizeGraphResponse(responseBody);
         const layoutStartedAt = performance.now();
         const layoutedElements = await getLayoutedElements(
           graphPayload.nodes,
@@ -278,14 +193,20 @@ export default function App() {
           fetchMs: fetchFinishedAt - fetchStartedAt,
           layoutMs: layoutFinishedAt - layoutStartedAt,
         });
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         if (isActive) {
           setLoadError(message);
         }
         console.error(error);
-      });
+      } finally {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void fetchGraph();
 
     return () => {
       isActive = false;
@@ -306,6 +227,20 @@ export default function App() {
     setEdges,
     setNodes,
   ]);
+
+  useEffect(() => {
+    if (mode !== "graph" || nodes.length === 0) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      reactFlowInstanceRef.current?.fitView({ padding: 0.2, duration: 180 });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [edges.length, mode, nodes.length]);
 
   const handleNodeClick: NodeMouseHandler = useCallback((_event, node) => {
     setFocusedNodeId(node.id);
@@ -396,6 +331,7 @@ export default function App() {
     ? ` · fetch ${Math.round(metrics.fetchMs)}ms · layout ${Math.round(metrics.layoutMs)}ms`
     : "";
   const statsLabel = `${analysisMode === "call" ? "call graph" : "dependencies"} · ${nodes.length}/${graph.nodes.length} nodes · ${edges.length}/${graph.edges.length} edges · ${graph.issues.length} issues`;
+  const headerStatusLabel = isLoading ? `${statsLabel} · loading` : statsLabel;
   const searchPlaceholder =
     analysisMode === "call" ? "Search functions..." : "Search files...";
 
@@ -515,7 +451,7 @@ export default function App() {
             textAlign: "right",
           }}
         >
-          {statsLabel}
+          {headerStatusLabel}
           {metricsLabel}
           {loadError ? ` · ${loadError}` : ""}
         </div>
@@ -531,6 +467,9 @@ export default function App() {
             onEdgesChange={onEdgesChange}
             onNodeClick={handleNodeClick}
             onPaneClick={clearFocus}
+            onInit={(instance) => {
+              reactFlowInstanceRef.current = instance;
+            }}
             nodeTypes={nodeTypes}
             fitView
             proOptions={{ hideAttribution: true }}

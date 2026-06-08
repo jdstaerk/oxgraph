@@ -1,6 +1,7 @@
 use crate::module_resolver::{create_module_resolver, resolve_module_path};
 use crate::path_utils::{
-    EntryPathError, normalize_existing_path, resolve_entry_path, stable_path_string,
+    EntryPathError, InternalAliasPattern, find_project_root, internal_alias_patterns,
+    is_project_source_file, normalize_existing_path, resolve_entry_path, stable_path_string,
 };
 use oxc_allocator::Allocator;
 use oxc_ast::AstKind;
@@ -14,97 +15,19 @@ use oxc_parser::Parser;
 use oxc_resolver::Resolver;
 use oxc_semantic::{AstNodes, NodeId, Scoping, Semantic, SemanticBuilder};
 use oxc_span::{SourceType, Span};
-use serde::Serialize;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Serialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct CallGraph {
-    pub nodes: Vec<CallNode>,
-    pub edges: Vec<CallEdge>,
-    pub issues: Vec<CallGraphIssue>,
-}
+mod filter;
+mod model;
 
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum CallNodeKind {
-    Function,
-    Method,
-    ArrowFunction,
-    Unresolved,
-}
-
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum CallNodeStatus {
-    Resolved,
-    Unresolved,
-}
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CallNode {
-    pub id: String,
-    pub label: String,
-    pub name: String,
-    pub file: String,
-    pub kind: CallNodeKind,
-    pub status: CallNodeStatus,
-    pub span_start: u32,
-    pub span_end: u32,
-    pub is_entry: bool,
-}
-
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum CallEdgeKind {
-    Direct,
-    Import,
-    Method,
-    Unresolved,
-}
-
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum CallConfidence {
-    High,
-    Medium,
-    Low,
-}
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CallEdge {
-    pub id: String,
-    pub source: String,
-    pub target: String,
-    pub callee_name: String,
-    pub kind: CallEdgeKind,
-    pub confidence: CallConfidence,
-    pub unresolved: bool,
-}
-
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum CallGraphIssueKind {
-    ReadError,
-    ParseError,
-    ResolveError,
-    SemanticError,
-    EntryFunctionNotFound,
-}
-
-#[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CallGraphIssue {
-    pub id: String,
-    pub file: String,
-    pub kind: CallGraphIssueKind,
-    pub message: String,
-}
+use filter::{filter_to_entry_neighborhood, normalize_entry_function};
+pub use model::{
+    CallConfidence, CallEdge, CallEdgeKind, CallGraph, CallGraphIssue, CallGraphIssueKind,
+    CallNode, CallNodeKind, CallNodeStatus,
+};
 
 #[derive(Debug)]
 pub enum CallGraphBuildError {
@@ -157,6 +80,7 @@ pub fn build_call_graph(
 struct ProjectCallGraphBuilder {
     entry_path: PathBuf,
     project_root: PathBuf,
+    internal_aliases: Vec<InternalAliasPattern>,
     resolver: Resolver,
     analyses: HashMap<PathBuf, FileAnalysis>,
     issue_counter: usize,
@@ -164,9 +88,12 @@ struct ProjectCallGraphBuilder {
 
 impl ProjectCallGraphBuilder {
     fn new(entry_path: PathBuf, project_root: PathBuf, resolver: Resolver) -> Self {
+        let internal_aliases = internal_alias_patterns(&project_root);
+
         Self {
             entry_path,
             project_root,
+            internal_aliases,
             resolver,
             analyses: HashMap::new(),
             issue_counter: 0,
@@ -183,11 +110,16 @@ impl ProjectCallGraphBuilder {
                 continue;
             }
 
-            if !is_supported_source_file(&normalized) {
+            if !is_project_source_file(&normalized, &self.project_root) {
                 continue;
             }
 
-            let analysis = analyze_file(&normalized, &self.resolver);
+            let analysis = analyze_file(
+                &normalized,
+                &self.resolver,
+                &self.project_root,
+                &self.internal_aliases,
+            );
             for dependency in &analysis.dependencies {
                 if self.should_analyze_dependency(dependency) {
                     queue.push_back(dependency.clone());
@@ -198,9 +130,7 @@ impl ProjectCallGraphBuilder {
     }
 
     fn should_analyze_dependency(&self, dependency: &Path) -> bool {
-        is_supported_source_file(dependency)
-            && !path_contains_segment(dependency, "node_modules")
-            && dependency.starts_with(&self.project_root)
+        is_project_source_file(dependency, &self.project_root)
     }
 
     fn finish(mut self, entry_function: Option<&str>) -> CallGraph {
@@ -389,7 +319,12 @@ enum PendingCallTarget {
     },
 }
 
-fn analyze_file(file_path: &Path, resolver: &Resolver) -> FileAnalysis {
+fn analyze_file(
+    file_path: &Path,
+    resolver: &Resolver,
+    project_root: &Path,
+    internal_aliases: &[InternalAliasPattern],
+) -> FileAnalysis {
     let mut analysis = FileAnalysis::new();
     let source_text = match fs::read_to_string(file_path) {
         Ok(source_text) => source_text,
@@ -424,7 +359,13 @@ fn analyze_file(file_path: &Path, resolver: &Resolver) -> FileAnalysis {
     let semantic_return = SemanticBuilder::new()
         .with_check_syntax_error(true)
         .build(&parse_result.program);
-    let mut analyzer = FileCallAnalyzer::new(file_path, resolver, &semantic_return.semantic);
+    let mut analyzer = FileCallAnalyzer::new(
+        file_path,
+        resolver,
+        project_root,
+        internal_aliases,
+        &semantic_return.semantic,
+    );
 
     for error in semantic_return.errors {
         analyzer.push_issue(CallGraphIssueKind::SemanticError, format!("{:?}", error));
@@ -441,6 +382,8 @@ struct FileCallAnalyzer<'a> {
     file_path: &'a Path,
     file: String,
     resolver: &'a Resolver,
+    project_root: &'a Path,
+    internal_aliases: &'a [InternalAliasPattern],
     semantic: &'a Semantic<'a>,
     analysis: FileAnalysis,
     function_node_to_call_node: HashMap<usize, String>,
@@ -453,11 +396,19 @@ struct FileCallAnalyzer<'a> {
 }
 
 impl<'a> FileCallAnalyzer<'a> {
-    fn new(file_path: &'a Path, resolver: &'a Resolver, semantic: &'a Semantic<'a>) -> Self {
+    fn new(
+        file_path: &'a Path,
+        resolver: &'a Resolver,
+        project_root: &'a Path,
+        internal_aliases: &'a [InternalAliasPattern],
+        semantic: &'a Semantic<'a>,
+    ) -> Self {
         Self {
             file_path,
             file: stable_path_string(file_path),
             resolver,
+            project_root,
+            internal_aliases,
             semantic,
             analysis: FileAnalysis::new(),
             function_node_to_call_node: HashMap::new(),
@@ -613,18 +564,14 @@ impl<'a> FileCallAnalyzer<'a> {
     }
 
     fn collect_import_declaration(&mut self, declaration: &ImportDeclaration<'a>) {
-        let source = declaration.source.value.as_str();
-        if !is_internal_import_specifier(source) {
-            return;
-        }
-
-        let Some(source_path) = self.resolve_dependency(source) else {
-            return;
-        };
-
         if declaration.import_kind == ImportOrExportKind::Type {
             return;
         }
+
+        let source = declaration.source.value.as_str();
+        let Some(source_path) = self.resolve_dependency(source) else {
+            return;
+        };
 
         let Some(specifiers) = &declaration.specifiers else {
             return;
@@ -676,10 +623,6 @@ impl<'a> FileCallAnalyzer<'a> {
 
         if let Some(source) = &declaration.source {
             let source = source.value.as_str();
-            if !is_internal_import_specifier(source) {
-                return;
-            }
-
             let Some(source_path) = self.resolve_dependency(source) else {
                 return;
             };
@@ -729,10 +672,6 @@ impl<'a> FileCallAnalyzer<'a> {
             return;
         }
         let source = declaration.source.value.as_str();
-        if !is_internal_import_specifier(source) {
-            return;
-        }
-
         let Some(source_path) = self.resolve_dependency(source) else {
             return;
         };
@@ -860,16 +799,22 @@ impl<'a> FileCallAnalyzer<'a> {
     fn resolve_dependency(&mut self, specifier: &str) -> Option<PathBuf> {
         match resolve_module_path(self.resolver, self.file_path, specifier) {
             Ok(path) => {
-                if self.dependency_index.insert(path.clone()) && is_supported_source_file(&path) {
+                if !is_project_source_file(&path, self.project_root) {
+                    return None;
+                }
+
+                if self.dependency_index.insert(path.clone()) {
                     self.analysis.dependencies.push(path.clone());
                 }
                 Some(path)
             }
             Err(message) => {
-                self.push_issue(
-                    CallGraphIssueKind::ResolveError,
-                    format!("{} -> {}", specifier, message),
-                );
+                if should_report_unresolved_dependency(specifier, self.internal_aliases) {
+                    self.push_issue(
+                        CallGraphIssueKind::ResolveError,
+                        format!("{} -> {}", specifier, message),
+                    );
+                }
                 None
             }
         }
@@ -1038,52 +983,6 @@ fn push_edge(graph: &mut CallGraph, edge_index: &mut HashSet<String>, edge: Edge
     });
 }
 
-fn filter_to_entry_neighborhood(
-    graph: &mut CallGraph,
-    entry_function: &str,
-    issue_counter: &mut usize,
-) {
-    let entry_ids: HashSet<String> = graph
-        .nodes
-        .iter()
-        .filter(|node| normalize_function_name(&node.name) == entry_function)
-        .map(|node| node.id.clone())
-        .collect();
-
-    if entry_ids.is_empty() {
-        *issue_counter += 1;
-        graph.issues.push(CallGraphIssue {
-            id: format!("issue-{}", issue_counter),
-            file: String::new(),
-            kind: CallGraphIssueKind::EntryFunctionNotFound,
-            message: format!("entry function `{}` was not found", entry_function),
-        });
-        return;
-    }
-
-    for node in &mut graph.nodes {
-        node.is_entry = entry_ids.contains(&node.id);
-    }
-
-    let mut visible_node_ids = entry_ids.clone();
-    let mut visible_edge_ids = HashSet::new();
-
-    for edge in &graph.edges {
-        if entry_ids.contains(&edge.source) || entry_ids.contains(&edge.target) {
-            visible_node_ids.insert(edge.source.clone());
-            visible_node_ids.insert(edge.target.clone());
-            visible_edge_ids.insert(edge.id.clone());
-        }
-    }
-
-    graph
-        .nodes
-        .retain(|node| visible_node_ids.contains(&node.id));
-    graph
-        .edges
-        .retain(|edge| visible_edge_ids.contains(&edge.id));
-}
-
 fn variable_function_metadata(
     declarator: &VariableDeclarator<'_>,
 ) -> Option<(usize, CallNodeKind, Span)> {
@@ -1215,51 +1114,15 @@ fn call_node_id(file: &str, name: &str, span: Span) -> String {
     format!("call:{}::{}@{}-{}", file, name, span.start, span.end)
 }
 
-fn normalize_entry_function(entry_function: Option<&str>) -> Option<&str> {
-    let entry_function = entry_function?.trim();
-    if entry_function.is_empty() {
-        None
-    } else {
-        Some(entry_function.trim_end_matches("()"))
-    }
-}
-
-fn normalize_function_name(name: &str) -> &str {
-    name.trim_end_matches("()")
-}
-
-fn find_project_root(entry_path: &Path) -> PathBuf {
-    let start_dir = entry_path.parent().unwrap_or(entry_path);
-    let mut current = Some(start_dir);
-    let mut fallback = start_dir.to_path_buf();
-
-    while let Some(dir) = current {
-        if dir.join("pnpm-workspace.yaml").exists() {
-            return dir.to_path_buf();
-        }
-        if dir.join("package.json").exists() || dir.join("tsconfig.json").exists() {
-            fallback = dir.to_path_buf();
-        }
-        current = dir.parent();
-    }
-
-    fallback
-}
-
-fn is_supported_source_file(path: &Path) -> bool {
-    matches!(
-        path.extension().and_then(|extension| extension.to_str()),
-        Some("ts" | "tsx" | "mts" | "cts" | "js" | "jsx" | "mjs" | "cjs")
-    )
-}
-
-fn path_contains_segment(path: &Path, segment: &str) -> bool {
-    path.components()
-        .any(|component| component.as_os_str().to_string_lossy() == segment)
-}
-
-fn is_internal_import_specifier(specifier: &str) -> bool {
-    specifier.starts_with("./") || specifier.starts_with("../") || specifier.starts_with("@/")
+fn should_report_unresolved_dependency(
+    specifier: &str,
+    internal_aliases: &[InternalAliasPattern],
+) -> bool {
+    specifier.starts_with("./")
+        || specifier.starts_with("../")
+        || internal_aliases
+            .iter()
+            .any(|alias| alias.matches(specifier))
 }
 
 #[cfg(test)]
@@ -1341,6 +1204,7 @@ mod tests {
             dir.join("main.ts"),
             r#"
 import { useEffect, useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { helper } from './util';
 
 function start(items: string[]) {
@@ -1349,6 +1213,7 @@ function start(items: string[]) {
   items.map((item) => item.trim());
   console.log('debug');
   missingGlobal();
+  createClient();
   helper();
 }
 "#,
@@ -1368,13 +1233,50 @@ function start(items: string[]) {
             !matches!(node.kind, CallNodeKind::Unresolved)
                 && !matches!(
                     node.name.as_str(),
-                    "useState" | "useEffect" | "map" | "trim" | "log" | "missingGlobal"
+                    "useState"
+                        | "useEffect"
+                        | "createClient"
+                        | "map"
+                        | "trim"
+                        | "log"
+                        | "missingGlobal"
                 )
         }));
         assert_eq!(graph.edges.len(), 1);
         assert_eq!(graph.edges[0].callee_name, "helper");
         assert_eq!(graph.edges[0].kind, CallEdgeKind::Import);
         assert!(!graph.edges[0].unresolved);
+        assert!(
+            graph
+                .issues
+                .iter()
+                .all(|issue| issue.kind != CallGraphIssueKind::ResolveError)
+        );
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn reports_unresolved_configured_internal_alias_imports() {
+        let dir = create_test_dir("missing-internal-alias");
+        fs::write(dir.join("package.json"), "{}").unwrap();
+        fs::write(
+            dir.join("tsconfig.json"),
+            r#"{"compilerOptions":{"baseUrl":".","paths":{"@app/*":["src/*"]}}}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(
+            dir.join("src/main.ts"),
+            "import { helper } from '@app/missing';\nfunction start() { helper(); }\n",
+        )
+        .unwrap();
+
+        let graph = build_call_graph(dir.join("src/main.ts"), Some("start")).unwrap();
+
+        assert!(graph.issues.iter().any(|issue| {
+            issue.kind == CallGraphIssueKind::ResolveError && issue.message.contains("@app/missing")
+        }));
 
         fs::remove_dir_all(dir).ok();
     }
@@ -1411,6 +1313,79 @@ function start(service: Service) {
         assert!(callees.contains("save"));
         assert!(!callees.contains("filter"));
         assert!(graph.edges.iter().all(|edge| !edge.unresolved));
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn resolves_tsconfig_alias_imports_after_path_resolution() {
+        let dir = create_test_dir("tsconfig-alias");
+        fs::write(dir.join("package.json"), "{}").unwrap();
+        fs::write(
+            dir.join("tsconfig.json"),
+            r#"{"compilerOptions":{"baseUrl":".","paths":{"@app/*":["src/*"]}}}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::write(
+            dir.join("src/main.ts"),
+            "import { helper } from '@app/util';\nfunction start() { helper(); }\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("src/util.ts"),
+            "export function helper() { return 1; }\n",
+        )
+        .unwrap();
+
+        let graph = build_call_graph(dir.join("src/main.ts"), Some("start")).unwrap();
+
+        assert!(graph.nodes.iter().any(|node| node.name == "start"));
+        assert!(graph.nodes.iter().any(|node| node.name == "helper"));
+        assert!(graph.edges.iter().any(|edge| {
+            edge.callee_name == "helper"
+                && edge.kind == CallEdgeKind::Import
+                && edge.confidence == CallConfidence::High
+                && !edge.unresolved
+        }));
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn filters_entry_function_to_full_caller_and_callee_lines() {
+        let dir = create_test_dir("recursive-entry-filter");
+        fs::write(
+            dir.join("main.ts"),
+            r#"
+function top() { middle(); }
+function middle() { start(); }
+function start() { leaf(); }
+function leaf() { end(); }
+function end() {}
+function sibling() {}
+"#,
+        )
+        .unwrap();
+
+        let graph = build_call_graph(dir.join("main.ts"), Some("start")).unwrap();
+        let names: HashSet<&str> = graph.nodes.iter().map(|node| node.name.as_str()).collect();
+        let edges: HashSet<&str> = graph
+            .edges
+            .iter()
+            .map(|edge| edge.callee_name.as_str())
+            .collect();
+
+        assert!(names.contains("top"));
+        assert!(names.contains("middle"));
+        assert!(names.contains("start"));
+        assert!(names.contains("leaf"));
+        assert!(names.contains("end"));
+        assert!(!names.contains("sibling"));
+        assert!(edges.contains("middle"));
+        assert!(edges.contains("start"));
+        assert!(edges.contains("leaf"));
+        assert!(edges.contains("end"));
 
         fs::remove_dir_all(dir).ok();
     }

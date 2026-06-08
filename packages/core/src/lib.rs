@@ -315,6 +315,7 @@ fn node_kind_to_string(kind: &NodeKind) -> String {
     match kind {
         NodeKind::Entry => "entry",
         NodeKind::File => "file",
+        NodeKind::External => "external",
         NodeKind::Ghost => "ghost",
     }
     .to_string()

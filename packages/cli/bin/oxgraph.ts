@@ -183,10 +183,28 @@ function listenWithFallback(
   });
 }
 
-const options = parseCliOptions();
+function main(): void {
+  const options = parseCliOptions();
+  const timerLabel = "Rust AST Parsing & Resolution";
+  let timerStarted = false;
 
-console.time("Rust AST Parsing & Resolution");
-const graphData = extractGraph(options.targetPath);
-console.timeEnd("Rust AST Parsing & Resolution");
+  try {
+    console.time(timerLabel);
+    timerStarted = true;
+    const graphData = extractGraph(options.targetPath);
+    console.timeEnd(timerLabel);
+    timerStarted = false;
 
-listenWithFallback(graphData, options, defaultPort);
+    listenWithFallback(graphData, options, defaultPort);
+  } catch (error) {
+    if (timerStarted) {
+      console.timeEnd(timerLabel);
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    process.exitCode = 1;
+  }
+}
+
+main();

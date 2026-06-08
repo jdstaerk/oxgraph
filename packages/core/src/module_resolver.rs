@@ -1,4 +1,4 @@
-use crate::path_utils::normalize_existing_path;
+use crate::path_utils::{find_tsconfig, normalize_existing_path};
 use oxc_resolver::{ResolveOptions, Resolver, TsconfigDiscovery, TsconfigOptions};
 use std::path::{Path, PathBuf};
 
@@ -43,18 +43,4 @@ pub(crate) fn resolve_module_path(
                 .unwrap_or_else(|_| resolution.full_path().to_path_buf())
         })
         .map_err(|err| err.to_string())
-}
-
-fn find_tsconfig(start_dir: &Path) -> Option<PathBuf> {
-    let mut current = Some(start_dir);
-
-    while let Some(dir) = current {
-        let candidate = dir.join("tsconfig.json");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-        current = dir.parent();
-    }
-
-    None
 }

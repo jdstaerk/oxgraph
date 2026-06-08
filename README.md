@@ -60,6 +60,7 @@ pnpm run build
 Analyze a project or source directory:
 
 ```bash
+pnpm run build
 pnpm run oxgraph -- --file "C:/path/to/project/src"
 ```
 
@@ -67,6 +68,12 @@ You can also pass a single entry file:
 
 ```bash
 pnpm run oxgraph -- --file "C:/path/to/project/src/main.tsx"
+```
+
+For a one-off build and start, use:
+
+```bash
+pnpm run oxgraph:build -- --file "C:/path/to/project/src"
 ```
 
 If no file is passed, oxgraph tries to use `packages/ui/src/main.tsx` from the current working directory and then falls back to the current directory.
@@ -171,6 +178,7 @@ pnpm --filter @oxgraph/ui run build
 pnpm --filter @oxgraph/cli run build
 pnpm run build
 pnpm run oxgraph -- --file "C:/path/to/project/src"
+pnpm run oxgraph:build -- --file "C:/path/to/project/src"
 ```
 
 ## Current Status
