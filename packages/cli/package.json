@@ -8,8 +8,10 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev:api": "tsc -p tsconfig.json && node dist/bin/oxgraph.js --api-only --no-open",
-    "test": "vitest run"
+    "dev": "tsc -p tsconfig.json && node dist/bin/oxgraph.js --api-only --no-open",
+    "test": "vitest run",
+    "lint": "oxlint .",
+    "format": "oxc format ."
   },
   "dependencies": {
     "@oxgraph/core": "workspace:*",
