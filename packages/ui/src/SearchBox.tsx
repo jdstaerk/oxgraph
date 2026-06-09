@@ -64,22 +64,6 @@ const resultsContainerStyle: CSSProperties = {
   overflow: "hidden",
 };
 
-function resultButtonStyle(
-  isSelected: boolean,
-  isHighlighted: boolean,
-): CSSProperties {
-  return {
-    width: "100%",
-    border: "none",
-    borderBottom: "1px solid #1e293b",
-    background: isSelected || isHighlighted ? "#1e3a8a" : "#0b1220",
-    color: "#e2e8f0",
-    padding: "8px 10px",
-    cursor: "pointer",
-    textAlign: "left",
-  };
-}
-
 export default function SearchBox({
   inputRef,
   query,
@@ -192,13 +176,13 @@ export default function SearchBox({
                 <button
                   key={node.id}
                   type="button"
+                  className="panel-btn"
                   onMouseDown={(event) => event.preventDefault()}
                   onMouseEnter={() => setHighlightedIndex(index)}
                   onClick={() => handleSelect(node.id)}
-                  style={resultButtonStyle(
-                    node.id === selectedNodeId,
-                    index === activeIndex,
-                  )}
+                  style={{
+                    background: node.id === selectedNodeId || index === activeIndex ? "#1e3a8a" : undefined,
+                  }}
                 >
                   <div
                     style={{

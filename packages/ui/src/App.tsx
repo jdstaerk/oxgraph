@@ -9,6 +9,7 @@ import {
 import ReactFlow, {
   Background,
   Controls,
+  MiniMap,
   useEdgesState,
   useNodesState,
   type NodeMouseHandler,
@@ -86,6 +87,13 @@ function findIssueNodeId(
   return matchingNode?.id ?? null;
 }
 
+function nodeColor(node: any) {
+  if (node.data?.kind === "ghost") return "#ef4444";
+  if (node.data?.kind === "external") return "#a855f7";
+  if (node.data?.isEntry) return "#0ea5e9";
+  return "#3b82f6";
+}
+
 export default function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const reactFlowInstanceRef = useRef<ReactFlowInstance | null>(null);
@@ -93,6 +101,7 @@ export default function App() {
     useState<AnalysisMode>("dependency");
   const [graphMode, setGraphMode] = useState<GraphMode>("graph");
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [focusDepth, setFocusDepth] = useState<number>(1);
   const [searchQuery, setSearchQuery] = useState("");
   const [showGhostNodes, setShowGhostNodes] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNodeData>([]);
@@ -112,13 +121,14 @@ export default function App() {
 
   useEffect(() => {
     const visibleGraph = applySearchHighlights(
-      filterGraphByFocus(visibleBaseGraph, focusedNodeId),
+      filterGraphByFocus(visibleBaseGraph, focusedNodeId, focusDepth),
       normalizedSearchQuery,
     );
     setNodes(visibleGraph.nodes);
     setEdges(visibleGraph.edges);
   }, [
     focusedNodeId,
+    focusDepth,
     normalizedSearchQuery,
     setEdges,
     setNodes,
@@ -145,6 +155,16 @@ export default function App() {
         return;
       }
 
+      if (focusedNodeId) {
+        const node = instance.getNode(focusedNodeId);
+        if (node && node.width && node.height) {
+          const x = node.position.x + node.width / 2;
+          const y = node.position.y + node.height / 2;
+          void instance.setCenter(x, y, { zoom: 1.2, duration: 400 });
+          return;
+        }
+      }
+
       if (analysisMode === "call" && !focusedNodeId) {
         void instance.setViewport({ x: 96, y: 72, zoom: 0.82 }, { duration: 180 });
         return;
@@ -159,7 +179,7 @@ export default function App() {
       window.cancelAnimationFrame(frameId);
       window.clearTimeout(timeoutId);
     };
-  }, [analysisMode, edges.length, focusedNodeId, graphMode, nodes.length]);
+  }, [analysisMode, edges.length, focusedNodeId, graphMode, nodes.length, focusDepth]);
 
   const clearFocus = useCallback(() => {
     setFocusedNodeId(null);
@@ -252,6 +272,7 @@ export default function App() {
         searchResultCount={searchMatches.length}
         focusedNodeId={focusedNodeId}
         focusedLabel={focusedLabel}
+        focusDepth={focusDepth}
         ghostNodeCount={ghostNodeCount}
         showGhostNodes={showGhostNodes}
         statsLabel={statsLabel}
@@ -265,6 +286,7 @@ export default function App() {
         onSearchSelect={selectSearchResult}
         onSearchClear={clearSearch}
         onClearFocus={clearFocus}
+        onFocusDepthChange={setFocusDepth}
       />
 
       <div style={graphAreaStyle}>
@@ -286,6 +308,11 @@ export default function App() {
               proOptions={{ hideAttribution: true }}
             >
               <Background color="#334155" gap={16} />
+              <MiniMap 
+                nodeColor={nodeColor}
+                maskColor="rgba(15, 23, 42, 0.7)"
+                style={{ background: "#0b1220", border: "1px solid #334155", borderRadius: 8 }}
+              />
               <Controls />
             </ReactFlow>
             <GraphCanvasState

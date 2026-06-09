@@ -33,19 +33,23 @@ This keeps the runtime boundary small and makes the tool suitable for fast local
 - Internal import and re-export resolution
 - TypeScript path alias support through resolver configuration
 - Domain-only call graph filtering to reduce framework and native API noise
-- Interactive React Flow UI
+- Interactive React Flow UI with **MiniMap for macro-architecture overview**
+- **Adjustable Focus Depth** to cleanly isolate specific functions and their immediate callers/callees
 - Automatic graph layout with ELK
 - Search, focus mode, raw JSON view, and issue reporting
 
 ## Installation
 
+To run oxgraph directly without installing it globally, you can use `npx`:
+
 ```bash
-pnpm install
+npx @oxgraph/cli --file "C:/path/to/project/src"
 ```
 
-Build the project before running the CLI:
+If you prefer to install it locally for development:
 
 ```bash
+pnpm install
 pnpm run build
 ```
 
@@ -54,23 +58,25 @@ pnpm run build
 Analyze a project or source directory:
 
 ```bash
-pnpm run oxgraph -- --file "C:/path/to/project/src"
+npx @oxgraph/cli .
+# or if developing locally:
+pnpm run oxgraph .
 ```
 
-When a directory is passed, oxgraph treats it as the analysis scope and scans supported JavaScript and TypeScript source files below that directory. This is intentionally framework-neutral: Vite apps, Next.js apps, libraries, and custom project layouts are handled through the same directory-scan behavior.
+When a directory is passed (either implicitly like `.` or explicitly via `--file`), oxgraph treats it as the analysis scope and scans supported JavaScript and TypeScript source files below that directory. This is intentionally framework-neutral: Vite apps, Next.js apps, libraries, and custom project layouts are handled through the same directory-scan behavior.
 
 Analyze a specific entry file:
 
 ```bash
-pnpm run oxgraph -- --file "C:/path/to/project/src/main.tsx"
+npx @oxgraph/cli src/main.tsx
 ```
 
 When a file is passed, oxgraph starts from that file and follows its reachable imports.
 
-For a fresh checkout, or after changing the Rust core or UI, use:
+For a fresh checkout of this repository, or after changing the Rust core or UI, use:
 
 ```bash
-pnpm run oxgraph:build -- --file "C:/path/to/project/src"
+pnpm run oxgraph:build --file "C:/path/to/project/src"
 ```
 
 The CLI starts a local server and opens the browser automatically. By default, the server runs on `http://localhost:8888`.

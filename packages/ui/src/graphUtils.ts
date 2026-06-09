@@ -168,41 +168,38 @@ export function getGraphStartPoints(
 function collectFocusedNodeIds(
   startNodeId: string,
   edges: LayoutedGraph["edges"],
+  maxDepth: number,
 ) {
   const relatedNodeIds = new Set<string>([startNodeId]);
-  const outgoingQueue = [startNodeId];
-  const incomingQueue = [startNodeId];
+  let outgoingQueue = [startNodeId];
+  let incomingQueue = [startNodeId];
 
-  while (outgoingQueue.length > 0) {
-    const currentNodeId = outgoingQueue.shift();
-    if (!currentNodeId) {
-      continue;
-    }
+  let currentDepth = 0;
 
-    for (const edge of edges) {
-      if (edge.source !== currentNodeId || relatedNodeIds.has(edge.target)) {
-        continue;
+  while (currentDepth < maxDepth && (outgoingQueue.length > 0 || incomingQueue.length > 0)) {
+    const nextOutgoing: string[] = [];
+    for (const currentNodeId of outgoingQueue) {
+      for (const edge of edges) {
+        if (edge.source === currentNodeId && !relatedNodeIds.has(edge.target)) {
+          relatedNodeIds.add(edge.target);
+          nextOutgoing.push(edge.target);
+        }
       }
-
-      relatedNodeIds.add(edge.target);
-      outgoingQueue.push(edge.target);
-    }
-  }
-
-  while (incomingQueue.length > 0) {
-    const currentNodeId = incomingQueue.shift();
-    if (!currentNodeId) {
-      continue;
     }
 
-    for (const edge of edges) {
-      if (edge.target !== currentNodeId || relatedNodeIds.has(edge.source)) {
-        continue;
+    const nextIncoming: string[] = [];
+    for (const currentNodeId of incomingQueue) {
+      for (const edge of edges) {
+        if (edge.target === currentNodeId && !relatedNodeIds.has(edge.source)) {
+          relatedNodeIds.add(edge.source);
+          nextIncoming.push(edge.source);
+        }
       }
-
-      relatedNodeIds.add(edge.source);
-      incomingQueue.push(edge.source);
     }
+
+    outgoingQueue = nextOutgoing;
+    incomingQueue = nextIncoming;
+    currentDepth++;
   }
 
   return relatedNodeIds;
@@ -211,12 +208,13 @@ function collectFocusedNodeIds(
 export function filterGraphByFocus(
   graph: LayoutedGraph,
   focusedNodeId: string | null,
+  focusDepth: number = 999,
 ): LayoutedGraph {
   if (!focusedNodeId) {
     return graph;
   }
 
-  const relatedNodeIds = collectFocusedNodeIds(focusedNodeId, graph.edges);
+  const relatedNodeIds = collectFocusedNodeIds(focusedNodeId, graph.edges, focusDepth);
   const visibleNodes = graph.nodes
     .filter((node) => relatedNodeIds.has(node.id))
     .map((node) => ({

@@ -13,6 +13,7 @@ type GraphToolbarProps = {
   searchResultCount: number;
   focusedNodeId: string | null;
   focusedLabel: string | null;
+  focusDepth: number;
   ghostNodeCount: number;
   showGhostNodes: boolean;
   statsLabel: string;
@@ -26,6 +27,7 @@ type GraphToolbarProps = {
   onSearchSelect: (nodeId: string) => void;
   onSearchClear: () => void;
   onClearFocus: () => void;
+  onFocusDepthChange: (depth: number) => void;
 };
 
 const headerStyle: CSSProperties = {
@@ -39,25 +41,17 @@ const headerStyle: CSSProperties = {
   flex: "0 0 auto",
 };
 
-const buttonStyleBase: CSSProperties = {
-  border: "1px solid #334155",
-  color: "#e2e8f0",
-  padding: "6px 10px",
-  borderRadius: 6,
-  cursor: "pointer",
-};
-
 function modeButtonStyle(isActive: boolean): CSSProperties {
   return {
-    ...buttonStyleBase,
     background: isActive ? "#1d4ed8" : "#0f172a",
+    borderColor: isActive ? "#2563eb" : undefined,
   };
 }
 
 function toggleButtonStyle(isActive: boolean, isDisabled: boolean): CSSProperties {
   return {
-    ...buttonStyleBase,
     background: isActive ? "#14532d" : "#0f172a",
+    borderColor: isActive ? "#166534" : undefined,
     color: isDisabled ? "#64748b" : "#e2e8f0",
     cursor: isDisabled ? "not-allowed" : "pointer",
     opacity: isDisabled ? 0.62 : 1,
@@ -80,6 +74,7 @@ export default function GraphToolbar({
   searchResultCount,
   focusedNodeId,
   focusedLabel,
+  focusDepth,
   ghostNodeCount,
   showGhostNodes,
   statsLabel,
@@ -93,6 +88,7 @@ export default function GraphToolbar({
   onSearchSelect,
   onSearchClear,
   onClearFocus,
+  onFocusDepthChange,
 }: GraphToolbarProps) {
   const headerStatusLabel = isLoading
     ? `${statsLabel} · loading`
@@ -104,6 +100,7 @@ export default function GraphToolbar({
       <div style={{ display: "flex", gap: 8 }}>
         <button
           type="button"
+          className="toolbar-btn"
           onClick={() => onAnalysisModeChange("dependency")}
           style={modeButtonStyle(analysisMode === "dependency")}
         >
@@ -111,6 +108,7 @@ export default function GraphToolbar({
         </button>
         <button
           type="button"
+          className="toolbar-btn"
           onClick={() => onAnalysisModeChange("call")}
           style={modeButtonStyle(analysisMode === "call")}
         >
@@ -120,6 +118,7 @@ export default function GraphToolbar({
       <div style={{ display: "flex", gap: 8 }}>
         <button
           type="button"
+          className="toolbar-btn"
           onClick={() => onGraphModeChange("graph")}
           style={modeButtonStyle(graphMode === "graph")}
         >
@@ -127,6 +126,7 @@ export default function GraphToolbar({
         </button>
         <button
           type="button"
+          className="toolbar-btn"
           onClick={() => onGraphModeChange("raw")}
           style={modeButtonStyle(graphMode === "raw")}
         >
@@ -135,6 +135,7 @@ export default function GraphToolbar({
       </div>
       <button
         type="button"
+        className="toolbar-btn"
         disabled={ghostNodeCount === 0}
         onClick={onGhostNodesToggle}
         style={toggleButtonStyle(showGhostNodes, ghostNodeCount === 0)}
@@ -167,7 +168,7 @@ export default function GraphToolbar({
         >
           <span
             style={{
-              maxWidth: 280,
+              maxWidth: 240,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -175,12 +176,32 @@ export default function GraphToolbar({
           >
             Focus: {focusedLabel}
           </span>
+          <select
+            value={focusDepth}
+            onChange={(e) => onFocusDepthChange(Number(e.target.value))}
+            style={{
+              background: "#0f172a",
+              color: "#e2e8f0",
+              border: "1px solid #334155",
+              borderRadius: 6,
+              padding: "4px 8px",
+              outline: "none",
+              cursor: "pointer",
+            }}
+            title="Focus Depth"
+          >
+            <option value={1}>Direct calls</option>
+            <option value={2}>2 levels</option>
+            <option value={3}>3 levels</option>
+            <option value={999}>Full path</option>
+          </select>
           <button
             type="button"
+            className="toolbar-btn"
             onClick={onClearFocus}
-            style={{ ...buttonStyleBase, background: "#0f172a" }}
+            style={{ background: "#0f172a" }}
           >
-            All
+            Clear Focus
           </button>
         </div>
       ) : null}

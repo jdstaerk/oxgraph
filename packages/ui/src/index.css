@@ -24,3 +24,57 @@ body,
 button {
   font: inherit;
 }
+
+/* UI Interactive Elements */
+.toolbar-btn {
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.toolbar-btn:hover:not(:disabled) {
+  background: #1e293b !important;
+  border-color: #475569;
+}
+.panel-btn {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid #1e293b;
+  background: transparent;
+  color: #cbd5e1;
+  cursor: pointer;
+  padding: 9px 12px;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+.panel-btn:hover:not(:disabled) {
+  background: #1e293b;
+}
+
+/* Custom Node Styles */
+.custom-node {
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+}
+.custom-node:hover {
+  transform: scale(1.03);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4) !important;
+  z-index: 100;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}

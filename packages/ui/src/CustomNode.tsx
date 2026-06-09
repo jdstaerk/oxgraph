@@ -1,7 +1,7 @@
 import { Handle, Position, type NodeProps } from "reactflow";
 import type { CSSProperties } from "react";
 import type { GraphNodeData } from "./graphTypes";
-import { nodeBadges, nodeSubtitle } from "./nodeDisplay";
+import { iconForNode, nodeBadges, nodeSubtitle } from "./nodeDisplay";
 
 const nodeStyleBase: CSSProperties = {
   width: 240,
@@ -15,11 +15,10 @@ const nodeStyleBase: CSSProperties = {
   textAlign: "left",
 };
 
-const badgeStyle: CSSProperties = {
+const badgeStyleBase: CSSProperties = {
   border: "1px solid #475569",
   borderRadius: 999,
   padding: "2px 6px",
-  color: "#cbd5e1",
   fontSize: 10,
   lineHeight: 1,
 };
@@ -58,6 +57,7 @@ export default function CustomNode({ data }: NodeProps<GraphNodeData>) {
   return (
     <div
       title={data.path || data.label}
+      className="custom-node"
       style={{
         ...nodeStyleBase,
         background: backgroundFor(data),
@@ -73,14 +73,24 @@ export default function CustomNode({ data }: NodeProps<GraphNodeData>) {
 
       <div
         style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
           overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          fontWeight: 700,
-          lineHeight: 1.25,
         }}
       >
-        {data.label}
+        <span style={{ fontSize: 14, opacity: 0.8 }}>{iconForNode(data)}</span>
+        <div
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontWeight: 700,
+            lineHeight: 1.25,
+          }}
+        >
+          {data.label}
+        </div>
       </div>
       <div
         style={{
@@ -105,8 +115,15 @@ export default function CustomNode({ data }: NodeProps<GraphNodeData>) {
           }}
         >
           {badges.map((badge) => (
-            <span key={badge} style={badgeStyle}>
-              {badge}
+            <span
+              key={badge.label}
+              style={{
+                ...badgeStyleBase,
+                borderColor: badge.color,
+                color: badge.color,
+              }}
+            >
+              {badge.label}
             </span>
           ))}
         </div>

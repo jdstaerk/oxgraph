@@ -19,31 +19,6 @@ const panelStyle: CSSProperties = {
   overflow: "hidden",
 };
 
-const headerStyle: CSSProperties = {
-  width: "100%",
-  border: "none",
-  borderBottom: "1px solid #1e293b",
-  background: "transparent",
-  color: "#e2e8f0",
-  padding: "9px 12px",
-  cursor: "pointer",
-  textAlign: "left",
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
-};
-
-const issueButtonStyle: CSSProperties = {
-  width: "100%",
-  border: "none",
-  borderBottom: "1px solid #1e293b",
-  background: "transparent",
-  color: "#cbd5e1",
-  cursor: "pointer",
-  padding: "9px 12px",
-  textAlign: "left",
-};
-
 function compactPath(path: string): string {
   const parts = path.split(/[\\/]/);
   return parts.length > 3 ? parts.slice(-3).join("/") : path;
@@ -64,7 +39,8 @@ export default function IssuesPanel({
     <div style={panelStyle}>
       <button
         type="button"
-        style={headerStyle}
+        className="panel-btn"
+        style={{ display: "flex", justifyContent: "space-between", gap: 12, color: "#e2e8f0" }}
         onClick={() => setIsOpen((current) => !current)}
       >
         <span style={{ fontWeight: 700 }}>{issues.length} issues</span>
@@ -76,7 +52,7 @@ export default function IssuesPanel({
             <button
               key={issue.id}
               type="button"
-              style={issueButtonStyle}
+              className="panel-btn"
               onClick={() => onIssueSelect(issue)}
             >
               <div style={{ fontSize: 12, fontWeight: 700 }}>

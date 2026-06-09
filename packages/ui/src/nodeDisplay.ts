@@ -28,6 +28,16 @@ export function compactPath(path: string, maxLength = 58): string {
   return trimMiddle(compactedPath, maxLength);
 }
 
+export function iconForNode(data: GraphNodeData): string {
+  if (data.kind === "file") return "📄";
+  if (data.kind === "function" || data.kind === "arrowFunction") return "ƒ";
+  if (data.kind === "method") return "Ⓜ";
+  if (data.kind === "external") return "📦";
+  if (data.kind === "ghost") return "👻";
+  if (data.kind === "entry") return "🚀";
+  return "⚡";
+}
+
 export function nodeSubtitle(data: GraphNodeData): string {
   if (data.kind === "ghost") {
     return "unresolved import";
@@ -41,27 +51,29 @@ export function nodeSubtitle(data: GraphNodeData): string {
   return compactPath(sourcePath);
 }
 
-export function nodeBadges(data: GraphNodeData): string[] {
-  const badges: string[] = [];
+export type NodeBadge = { label: string; color: string };
+
+export function nodeBadges(data: GraphNodeData): NodeBadge[] {
+  const badges: NodeBadge[] = [];
 
   if (data.isEntry) {
-    badges.push("entry");
+    badges.push({ label: "entry", color: "#0ea5e9" });
   }
 
   if (data.kind === "ghost" || data.kind === "external") {
-    badges.push(data.kind);
+    badges.push({ label: data.kind, color: data.kind === "ghost" ? "#ef4444" : "#a855f7" });
   }
 
   if (data.kind === "method") {
-    badges.push("method");
+    badges.push({ label: "method", color: "#10b981" });
   }
 
   if (data.kind === "arrowFunction") {
-    badges.push("arrow");
+    badges.push({ label: "arrow", color: "#f59e0b" });
   }
 
   if (data.status !== "resolved") {
-    badges.push(data.status);
+    badges.push({ label: data.status, color: "#f43f5e" });
   }
 
   return badges;

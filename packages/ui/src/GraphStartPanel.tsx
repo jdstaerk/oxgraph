@@ -29,17 +29,6 @@ const headerStyle: CSSProperties = {
   fontWeight: 700,
 };
 
-const buttonStyle: CSSProperties = {
-  width: "100%",
-  border: "none",
-  borderBottom: "1px solid #1e293b",
-  background: "transparent",
-  color: "#e2e8f0",
-  cursor: "pointer",
-  padding: "9px 12px",
-  textAlign: "left",
-};
-
 function titleFor(analysisMode: AnalysisMode): string {
   return analysisMode === "call" ? "Call roots" : "Start points";
 }
@@ -60,7 +49,7 @@ export default function GraphStartPanel({
         <button
           key={startPoint.id}
           type="button"
-          style={buttonStyle}
+          className="panel-btn"
           onClick={() => onSelect(startPoint.id)}
         >
           <div
