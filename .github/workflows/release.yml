@@ -52,7 +52,7 @@ jobs:
           targets: ${{ matrix.settings.target }}
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build Core Native Binary
         run: pnpm --filter @oxgraph/core exec napi build --platform --release --target ${{ matrix.settings.target }}
@@ -86,7 +86,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
