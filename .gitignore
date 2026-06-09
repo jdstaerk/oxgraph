@@ -157,3 +157,5 @@ Cargo.lock
 # Custom
 packages/cli/public-ui/
 *.node
+packages/core/npm/
+packages/core/artifacts/

@@ -10,7 +10,17 @@
     "*.node"
   ],
   "napi": {
-    "binaryName": "oxgraph-core"
+    "binaryName": "oxgraph-core",
+    "targets": [
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-musl"
+    ]
   },
   "scripts": {
     "build": "napi build --platform --release",
@@ -26,5 +36,15 @@
   "packageManager": "pnpm@10.29.3",
   "devDependencies": {
     "@napi-rs/cli": "^3.7.0"
+  },
+  "optionalDependencies": {
+    "@oxgraph/core-darwin-arm64": "0.1.0",
+    "@oxgraph/core-darwin-x64": "0.1.0",
+    "@oxgraph/core-linux-arm64-gnu": "0.1.0",
+    "@oxgraph/core-linux-arm64-musl": "0.1.0",
+    "@oxgraph/core-linux-x64-gnu": "0.1.0",
+    "@oxgraph/core-linux-x64-musl": "0.1.0",
+    "@oxgraph/core-win32-arm64-msvc": "0.1.0",
+    "@oxgraph/core-win32-x64-msvc": "0.1.0"
   }
 }

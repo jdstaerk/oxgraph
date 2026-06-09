@@ -3,3 +3,5 @@ target/
 Cargo.toml
 Cargo.lock
 build.rs
+npm/
+artifacts/
