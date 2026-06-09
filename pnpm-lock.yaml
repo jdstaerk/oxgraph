@@ -27,12 +27,18 @@ importers:
         specifier: ^11.0.0
         version: 11.0.0
     devDependencies:
+      '@oxgraph/ui':
+        specifier: workspace:*
+        version: link:../ui
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.1
       '@types/supertest':
         specifier: ^7.2.0
         version: 7.2.0
+      shx:
+        specifier: ^0.4.0
+        version: 0.4.0
       supertest:
         specifier: ^7.2.2
         version: 7.2.2

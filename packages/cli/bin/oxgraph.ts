@@ -36,7 +36,9 @@ function parseCliOptions(): CliOptions {
   const flaggedTargetPath =
     targetFlagIndex !== -1 ? args[targetFlagIndex + 1] : undefined;
   const positionalTargetPath = args.find(
-    (arg, index) => !arg.startsWith("-") && index !== targetFlagIndex + 1,
+    (arg, index) =>
+      !arg.startsWith("-") &&
+      (targetFlagIndex === -1 || index !== targetFlagIndex + 1),
   );
   const targetPath = flaggedTargetPath || positionalTargetPath;
 
