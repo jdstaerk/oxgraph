@@ -1,8 +1,4 @@
-import type {
-  CSSProperties,
-  FormEvent,
-  RefObject,
-} from "react";
+import type { CSSProperties, RefObject } from "react";
 import type { AnalysisMode, GraphMetrics, GraphMode } from "./appTypes";
 import type { LayoutedGraphNode } from "./graphTypes";
 import SearchBox from "./SearchBox";
@@ -17,15 +13,15 @@ type GraphToolbarProps = {
   searchResultCount: number;
   focusedNodeId: string | null;
   focusedLabel: string | null;
-  callEntryFunction: string;
+  ghostNodeCount: number;
+  showGhostNodes: boolean;
   statsLabel: string;
   metrics: GraphMetrics | null;
   loadError: string | null;
   isLoading: boolean;
   onAnalysisModeChange: (mode: AnalysisMode) => void;
   onGraphModeChange: (mode: GraphMode) => void;
-  onCallEntryFunctionChange: (value: string) => void;
-  onCallGraphSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onGhostNodesToggle: () => void;
   onSearchQueryChange: (query: string) => void;
   onSearchSelect: (nodeId: string) => void;
   onSearchClear: () => void;
@@ -51,21 +47,20 @@ const buttonStyleBase: CSSProperties = {
   cursor: "pointer",
 };
 
-const inputStyle: CSSProperties = {
-  width: 220,
-  height: 32,
-  border: "1px solid #334155",
-  borderRadius: 6,
-  background: "#0f172a",
-  color: "#e2e8f0",
-  padding: "0 10px",
-  outline: "none",
-};
-
 function modeButtonStyle(isActive: boolean): CSSProperties {
   return {
     ...buttonStyleBase,
     background: isActive ? "#1d4ed8" : "#0f172a",
+  };
+}
+
+function toggleButtonStyle(isActive: boolean, isDisabled: boolean): CSSProperties {
+  return {
+    ...buttonStyleBase,
+    background: isActive ? "#14532d" : "#0f172a",
+    color: isDisabled ? "#64748b" : "#e2e8f0",
+    cursor: isDisabled ? "not-allowed" : "pointer",
+    opacity: isDisabled ? 0.62 : 1,
   };
 }
 
@@ -85,15 +80,15 @@ export default function GraphToolbar({
   searchResultCount,
   focusedNodeId,
   focusedLabel,
-  callEntryFunction,
+  ghostNodeCount,
+  showGhostNodes,
   statsLabel,
   metrics,
   loadError,
   isLoading,
   onAnalysisModeChange,
   onGraphModeChange,
-  onCallEntryFunctionChange,
-  onCallGraphSubmit,
+  onGhostNodesToggle,
   onSearchQueryChange,
   onSearchSelect,
   onSearchClear,
@@ -138,27 +133,16 @@ export default function GraphToolbar({
           Raw JSON
         </button>
       </div>
-      {analysisMode === "call" ? (
-        <form
-          onSubmit={onCallGraphSubmit}
-          style={{ display: "flex", gap: 8, alignItems: "center" }}
-        >
-          <input
-            aria-label="Function name"
-            type="search"
-            placeholder="Function name..."
-            value={callEntryFunction}
-            onChange={(event) => onCallEntryFunctionChange(event.target.value)}
-            style={inputStyle}
-          />
-          <button
-            type="submit"
-            style={{ ...buttonStyleBase, background: "#0f172a" }}
-          >
-            Analyze
-          </button>
-        </form>
-      ) : null}
+      <button
+        type="button"
+        disabled={ghostNodeCount === 0}
+        onClick={onGhostNodesToggle}
+        style={toggleButtonStyle(showGhostNodes, ghostNodeCount === 0)}
+        title="Show or hide unresolved ghost nodes"
+      >
+        Ghosts {showGhostNodes ? "on" : "off"}
+        {ghostNodeCount > 0 ? ` · ${ghostNodeCount}` : ""}
+      </button>
       <SearchBox
         inputRef={searchInputRef}
         query={searchQuery}

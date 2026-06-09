@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 pub(super) struct ProjectCallGraphBuilder {
-    entry_path: PathBuf,
+    initial_paths: Vec<PathBuf>,
     project_root: PathBuf,
     internal_aliases: Vec<InternalAliasPattern>,
     resolver: Resolver,
@@ -21,11 +21,15 @@ pub(super) struct ProjectCallGraphBuilder {
 }
 
 impl ProjectCallGraphBuilder {
-    pub(super) fn new(entry_path: PathBuf, project_root: PathBuf, resolver: Resolver) -> Self {
+    pub(super) fn new(
+        initial_paths: Vec<PathBuf>,
+        project_root: PathBuf,
+        resolver: Resolver,
+    ) -> Self {
         let internal_aliases = internal_alias_patterns(&project_root);
 
         Self {
-            entry_path,
+            initial_paths,
             project_root,
             internal_aliases,
             resolver,
@@ -35,7 +39,7 @@ impl ProjectCallGraphBuilder {
     }
 
     pub(super) fn analyze_reachable_files(&mut self) {
-        let mut queue = VecDeque::from([self.entry_path.clone()]);
+        let mut queue = VecDeque::from(self.initial_paths.clone());
         let mut queued = HashSet::new();
 
         while let Some(file_path) = queue.pop_front() {
@@ -122,7 +126,9 @@ impl ProjectCallGraphBuilder {
             active_nodes.insert(edge.target.clone());
         }
 
-        graph.nodes.retain(|node| node.is_entry || active_nodes.contains(&node.id));
+        graph
+            .nodes
+            .retain(|node| node.is_entry || active_nodes.contains(&node.id));
 
         graph
     }

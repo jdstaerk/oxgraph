@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type FormEvent,
 } from "react";
 import ReactFlow, {
   Background,
@@ -25,6 +24,7 @@ import IssuesPanel from "./IssuesPanel";
 import type { GraphEdgeData, GraphIssue, GraphNodeData } from "./graphTypes";
 import {
   applySearchHighlights,
+  filterGraphByGhostVisibility,
   filterGraphByFocus,
   matchesSearchQuery,
   normalizeSearchQuery,
@@ -92,48 +92,72 @@ export default function App() {
   const [graphMode, setGraphMode] = useState<GraphMode>("graph");
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [callEntryFunction, setCallEntryFunction] = useState("");
-  const [activeCallEntryFunction, setActiveCallEntryFunction] = useState("");
+  const [showGhostNodes, setShowGhostNodes] = useState(true);
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdgeData>([]);
   const { graph, layoutedGraph, metrics, loadError, isLoading } =
     useGraphData({
       analysisMode,
-      activeCallEntryFunction,
     });
   const normalizedSearchQuery = useMemo(
     () => normalizeSearchQuery(searchQuery),
     [searchQuery],
   );
+  const visibleBaseGraph = useMemo(
+    () => filterGraphByGhostVisibility(layoutedGraph, showGhostNodes),
+    [layoutedGraph, showGhostNodes],
+  );
 
   useEffect(() => {
     const visibleGraph = applySearchHighlights(
-      filterGraphByFocus(layoutedGraph, focusedNodeId),
+      filterGraphByFocus(visibleBaseGraph, focusedNodeId),
       normalizedSearchQuery,
     );
     setNodes(visibleGraph.nodes);
     setEdges(visibleGraph.edges);
   }, [
     focusedNodeId,
-    layoutedGraph,
     normalizedSearchQuery,
     setEdges,
     setNodes,
+    visibleBaseGraph,
   ]);
+
+  useEffect(() => {
+    if (
+      focusedNodeId &&
+      !visibleBaseGraph.nodes.some((node) => node.id === focusedNodeId)
+    ) {
+      setFocusedNodeId(null);
+    }
+  }, [focusedNodeId, visibleBaseGraph.nodes]);
 
   useEffect(() => {
     if (graphMode !== "graph" || nodes.length === 0) {
       return;
     }
 
-    const frameId = window.requestAnimationFrame(() => {
-      reactFlowInstanceRef.current?.fitView({ padding: 0.18, duration: 180 });
-    });
+    const fitView = () => {
+      const instance = reactFlowInstanceRef.current;
+      if (!instance) {
+        return;
+      }
+
+      if (analysisMode === "call" && !focusedNodeId) {
+        void instance.setViewport({ x: 96, y: 72, zoom: 0.82 }, { duration: 180 });
+        return;
+      }
+
+      instance.fitView({ padding: 0.18, duration: 180 });
+    };
+    const frameId = window.requestAnimationFrame(fitView);
+    const timeoutId = window.setTimeout(fitView, 120);
 
     return () => {
       window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
     };
-  }, [edges.length, focusedNodeId, graphMode, nodes.length]);
+  }, [analysisMode, edges.length, focusedNodeId, graphMode, nodes.length]);
 
   const clearFocus = useCallback(() => {
     setFocusedNodeId(null);
@@ -155,26 +179,19 @@ export default function App() {
     setSearchQuery("");
   }, []);
 
-  const handleCallGraphSubmit = useCallback(
-    (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      setActiveCallEntryFunction(callEntryFunction.trim());
-      setFocusedNodeId(null);
-      setSearchQuery("");
-      setGraphMode("graph");
-    },
-    [callEntryFunction],
-  );
+  const toggleGhostNodes = useCallback(() => {
+    setShowGhostNodes((currentValue) => !currentValue);
+  }, []);
 
   const searchMatches = useMemo(() => {
     if (!normalizedSearchQuery) {
       return [];
     }
 
-    return layoutedGraph.nodes.filter((node) =>
+    return visibleBaseGraph.nodes.filter((node) =>
       matchesSearchQuery(node, normalizedSearchQuery),
     );
-  }, [layoutedGraph.nodes, normalizedSearchQuery]);
+  }, [normalizedSearchQuery, visibleBaseGraph.nodes]);
   const searchResults = searchMatches.slice(0, SEARCH_RESULT_LIMIT);
 
   const selectSearchResult = useCallback((nodeId: string) => {
@@ -188,13 +205,13 @@ export default function App() {
 
   const handleIssueSelect = useCallback(
     (issue: GraphIssue) => {
-      const issueNodeId = findIssueNodeId(issue, layoutedGraph.nodes);
+      const issueNodeId = findIssueNodeId(issue, visibleBaseGraph.nodes);
       if (issueNodeId) {
         setFocusedNodeId(issueNodeId);
         setGraphMode("graph");
       }
     },
-    [layoutedGraph.nodes],
+    [visibleBaseGraph.nodes],
   );
 
   const rawJson = useMemo(() => JSON.stringify(graph, null, 2), [graph]);
@@ -203,15 +220,19 @@ export default function App() {
       return null;
     }
 
-    const focusedNode = layoutedGraph.nodes.find(
+    const focusedNode = visibleBaseGraph.nodes.find(
       (node) => node.id === focusedNodeId,
     );
     return focusedNode?.data.label || focusedNodeId;
-  }, [focusedNodeId, layoutedGraph.nodes]);
+  }, [focusedNodeId, visibleBaseGraph.nodes]);
 
   const statsLabel = `${analysisMode === "call" ? "call graph" : "dependencies"} · ${nodes.length}/${graph.nodes.length} nodes · ${edges.length}/${graph.edges.length} edges · ${graph.issues.length} issues`;
   const searchPlaceholder =
     analysisMode === "call" ? "Search functions..." : "Search files...";
+  const ghostNodeCount = useMemo(
+    () => layoutedGraph.nodes.filter((node) => node.data.kind === "ghost").length,
+    [layoutedGraph.nodes],
+  );
 
   return (
     <div style={appStyle}>
@@ -225,15 +246,15 @@ export default function App() {
         searchResultCount={searchMatches.length}
         focusedNodeId={focusedNodeId}
         focusedLabel={focusedLabel}
-        callEntryFunction={callEntryFunction}
+        ghostNodeCount={ghostNodeCount}
+        showGhostNodes={showGhostNodes}
         statsLabel={statsLabel}
         metrics={metrics}
         loadError={loadError}
         isLoading={isLoading}
         onAnalysisModeChange={selectAnalysisMode}
         onGraphModeChange={setGraphMode}
-        onCallEntryFunctionChange={setCallEntryFunction}
-        onCallGraphSubmit={handleCallGraphSubmit}
+        onGhostNodesToggle={toggleGhostNodes}
         onSearchQueryChange={setSearchQuery}
         onSearchSelect={selectSearchResult}
         onSearchClear={clearSearch}
@@ -255,6 +276,7 @@ export default function App() {
               }}
               nodeTypes={nodeTypes}
               fitView
+              minZoom={analysisMode === "call" ? 0.04 : 0.02}
               proOptions={{ hideAttribution: true }}
             >
               <Background color="#334155" gap={16} />
@@ -262,7 +284,6 @@ export default function App() {
             </ReactFlow>
             <GraphCanvasState
               analysisMode={analysisMode}
-              activeCallEntryFunction={activeCallEntryFunction}
               isLoading={isLoading}
               loadError={loadError}
               nodeCount={graph.nodes.length}

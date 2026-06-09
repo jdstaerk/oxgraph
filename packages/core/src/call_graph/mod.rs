@@ -1,5 +1,8 @@
 use crate::module_resolver::create_module_resolver;
-use crate::path_utils::{EntryPathError, find_project_root, resolve_entry_path};
+use crate::path_utils::{
+    AnalysisTarget, EntryPathError, collect_project_source_files, find_project_root,
+    resolve_analysis_target,
+};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -24,6 +27,7 @@ use project_builder::ProjectCallGraphBuilder;
 pub enum CallGraphBuildError {
     EntryNotFound { path: PathBuf },
     EntryReadFailed { path: PathBuf, message: String },
+    NoSourceFiles { path: PathBuf },
 }
 
 impl fmt::Display for CallGraphBuildError {
@@ -38,6 +42,13 @@ impl fmt::Display for CallGraphBuildError {
                     "failed to read entry file {}: {}",
                     path.display(),
                     message
+                )
+            }
+            Self::NoSourceFiles { path } => {
+                write!(
+                    f,
+                    "no supported JavaScript or TypeScript source files found under: {}",
+                    path.display()
                 )
             }
         }
@@ -59,10 +70,20 @@ pub fn build_call_graph(
     entry_file: impl AsRef<Path>,
     entry_function: Option<&str>,
 ) -> Result<CallGraph, CallGraphBuildError> {
-    let entry_path = resolve_entry_path(entry_file.as_ref())?;
-    let project_root = find_project_root(&entry_path);
-    let resolver = create_module_resolver(&entry_path);
-    let mut builder = ProjectCallGraphBuilder::new(entry_path, project_root, resolver);
+    let target = resolve_analysis_target(entry_file.as_ref())?;
+    let project_root = find_project_root(target.path());
+    let resolver = create_module_resolver(target.path());
+    let initial_paths = match target {
+        AnalysisTarget::File(entry_path) => vec![entry_path],
+        AnalysisTarget::Directory(root_path) => {
+            let source_files = collect_project_source_files(&root_path);
+            if source_files.is_empty() {
+                return Err(CallGraphBuildError::NoSourceFiles { path: root_path });
+            }
+            source_files
+        }
+    };
+    let mut builder = ProjectCallGraphBuilder::new(initial_paths, project_root, resolver);
 
     builder.analyze_reachable_files();
     Ok(builder.finish(entry_function))

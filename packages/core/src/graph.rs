@@ -1,9 +1,9 @@
 use crate::extract_imports;
 use crate::module_resolver::{create_module_resolver, resolve_module_path};
 use crate::path_utils::{
-    EntryPathError, find_project_root, is_project_path, is_project_source_file,
-    is_supported_source_file, label_from_path, normalize_existing_path, resolve_entry_path,
-    stable_path_string,
+    AnalysisTarget, EntryPathError, collect_project_source_files, find_project_root,
+    is_project_path, is_project_source_file, is_supported_source_file, label_from_path,
+    normalize_existing_path, resolve_analysis_target, stable_path_string,
 };
 use oxc_resolver::Resolver;
 use serde::Serialize;
@@ -97,6 +97,7 @@ pub struct GraphIssue {
 pub enum GraphBuildError {
     EntryNotFound { path: PathBuf },
     EntryReadFailed { path: PathBuf, message: String },
+    NoSourceFiles { path: PathBuf },
 }
 
 impl fmt::Display for GraphBuildError {
@@ -111,6 +112,13 @@ impl fmt::Display for GraphBuildError {
                     "failed to read entry file {}: {}",
                     path.display(),
                     message
+                )
+            }
+            Self::NoSourceFiles { path } => {
+                write!(
+                    f,
+                    "no supported JavaScript or TypeScript source files found under: {}",
+                    path.display()
                 )
             }
         }
@@ -129,12 +137,25 @@ impl From<EntryPathError> for GraphBuildError {
 }
 
 pub fn build_graph(entry_file: impl AsRef<Path>) -> Result<Graph, GraphBuildError> {
-    let entry_path = resolve_entry_path(entry_file.as_ref())?;
-    let project_root = find_project_root(&entry_path);
-
-    let resolver = create_module_resolver(&entry_path);
+    let target = resolve_analysis_target(entry_file.as_ref())?;
+    let project_root = find_project_root(target.path());
+    let resolver = create_module_resolver(target.path());
     let mut builder = GraphBuilder::new(resolver, project_root);
-    builder.walk(&entry_path, true);
+
+    match target {
+        AnalysisTarget::File(entry_path) => builder.walk(&entry_path, true),
+        AnalysisTarget::Directory(root_path) => {
+            let source_files = collect_project_source_files(&root_path);
+            if source_files.is_empty() {
+                return Err(GraphBuildError::NoSourceFiles { path: root_path });
+            }
+
+            for source_file in source_files {
+                builder.walk(&source_file, false);
+            }
+        }
+    }
+
     Ok(builder.graph)
 }
 
@@ -614,8 +635,8 @@ mod tests {
     }
 
     #[test]
-    fn discovers_jsx_entry_when_directory_is_passed() {
-        let dir = create_test_dir("jsx-entry");
+    fn scans_source_directory_when_directory_is_passed() {
+        let dir = create_test_dir("directory-scope");
         fs::write(dir.join("package.json"), "{}").unwrap();
         fs::create_dir_all(dir.join("src")).unwrap();
         fs::write(dir.join("src/main.jsx"), "import './view';\n").unwrap();
@@ -623,10 +644,41 @@ mod tests {
 
         let graph = build_graph(&dir).unwrap();
 
-        assert!(graph.nodes.iter().any(|node| {
-            node.label == "main.jsx" && node.kind == NodeKind::Entry && node.is_entry
-        }));
+        assert!(
+            graph.nodes.iter().any(|node| node.label == "main.jsx"
+                && node.kind == NodeKind::File
+                && !node.is_entry)
+        );
         assert!(graph.nodes.iter().any(|node| node.label == "view.jsx"));
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn scans_nested_source_files_when_directory_is_passed() {
+        let dir = create_test_dir("nested-directory-scope");
+        fs::write(dir.join("package.json"), "{}").unwrap();
+        fs::create_dir_all(dir.join("screens/home")).unwrap();
+        fs::create_dir_all(dir.join("components")).unwrap();
+        fs::write(
+            dir.join("screens/home/page.tsx"),
+            "import { Shell } from '../../components/Shell';\nexport default function Page() { return <Shell />; }\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("components/Shell.tsx"),
+            "export function Shell() { return null; }\n",
+        )
+        .unwrap();
+
+        let graph = build_graph(&dir).unwrap();
+
+        assert!(
+            graph.nodes.iter().any(|node| node.label == "page.tsx"
+                && node.kind == NodeKind::File
+                && !node.is_entry)
+        );
+        assert!(graph.nodes.iter().any(|node| node.label == "Shell.tsx"));
 
         fs::remove_dir_all(dir).ok();
     }

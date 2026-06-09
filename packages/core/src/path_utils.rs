@@ -43,23 +43,30 @@ impl fmt::Display for EntryPathError {
 
 impl std::error::Error for EntryPathError {}
 
-pub(crate) fn resolve_entry_path(path: &Path) -> Result<PathBuf, EntryPathError> {
+pub(crate) enum AnalysisTarget {
+    File(PathBuf),
+    Directory(PathBuf),
+}
+
+impl AnalysisTarget {
+    pub(crate) fn path(&self) -> &Path {
+        match self {
+            Self::File(path) | Self::Directory(path) => path,
+        }
+    }
+}
+
+pub(crate) fn resolve_analysis_target(path: &Path) -> Result<AnalysisTarget, EntryPathError> {
     if path.is_file() {
-        return normalize_path(path);
+        return normalize_path(path).map(AnalysisTarget::File);
     }
 
     if path.is_dir() {
-        if let Some(candidate) = discover_entry_in_dir(path) {
-            return normalize_path(&candidate);
-        }
-
-        return Err(EntryPathError::NotFound {
-            path: path.to_path_buf(),
-        });
+        return normalize_path(path).map(AnalysisTarget::Directory);
     }
 
     if path.exists() {
-        return normalize_path(path);
+        return normalize_path(path).map(AnalysisTarget::File);
     }
 
     Err(EntryPathError::NotFound {
@@ -84,7 +91,11 @@ pub(crate) fn label_from_path(path: &Path) -> String {
 }
 
 pub(crate) fn find_project_root(entry_path: &Path) -> PathBuf {
-    let start_dir = entry_path.parent().unwrap_or(entry_path);
+    let start_dir = if entry_path.is_dir() {
+        entry_path
+    } else {
+        entry_path.parent().unwrap_or(entry_path)
+    };
     let mut current = Some(start_dir);
     let mut fallback = start_dir.to_path_buf();
 
@@ -174,6 +185,56 @@ pub(crate) fn path_contains_segment(path: &Path, segment: &str) -> bool {
         .any(|component| component.as_os_str().to_string_lossy() == segment)
 }
 
+pub(crate) fn collect_project_source_files(root: &Path) -> Vec<PathBuf> {
+    let root = normalize_existing_path(root).unwrap_or_else(|_| root.to_path_buf());
+    let mut directories = vec![root];
+    let mut source_files = Vec::new();
+
+    while let Some(directory) = directories.pop() {
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_dir() {
+                if !is_ignored_directory(&path) {
+                    directories.push(path);
+                }
+                continue;
+            }
+
+            if is_supported_source_file(&path)
+                && let Ok(normalized) = normalize_existing_path(&path)
+            {
+                source_files.push(normalized);
+            }
+        }
+    }
+
+    source_files.sort();
+    source_files
+}
+
+fn is_ignored_directory(path: &Path) -> bool {
+    const IGNORED_DIRECTORIES: &[&str] = &[
+        ".git",
+        ".next",
+        ".turbo",
+        ".vercel",
+        "build",
+        "coverage",
+        "dist",
+        "node_modules",
+        "out",
+        "target",
+    ];
+
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| IGNORED_DIRECTORIES.contains(&name))
+}
+
 fn normalize_path(path: &Path) -> Result<PathBuf, EntryPathError> {
     if path.exists() {
         fs::canonicalize(path).map_err(|err| EntryPathError::ReadFailed {
@@ -183,52 +244,4 @@ fn normalize_path(path: &Path) -> Result<PathBuf, EntryPathError> {
     } else {
         Ok(path.to_path_buf())
     }
-}
-
-fn discover_entry_in_dir(root: &Path) -> Option<PathBuf> {
-    const ROOT_ENTRY_CANDIDATES: &[&str] = &[
-        "main.tsx",
-        "main.ts",
-        "main.jsx",
-        "main.js",
-        "index.tsx",
-        "index.ts",
-        "index.jsx",
-        "index.js",
-        "App.tsx",
-        "App.ts",
-        "App.jsx",
-        "App.js",
-    ];
-
-    for candidate in ROOT_ENTRY_CANDIDATES {
-        let candidate_path = root.join(candidate);
-        if candidate_path.is_file() {
-            return Some(candidate_path);
-        }
-    }
-
-    const SRC_ENTRY_CANDIDATES: &[&str] = &[
-        "src/main.tsx",
-        "src/main.ts",
-        "src/main.jsx",
-        "src/main.js",
-        "src/index.tsx",
-        "src/index.ts",
-        "src/index.jsx",
-        "src/index.js",
-        "src/App.tsx",
-        "src/App.ts",
-        "src/App.jsx",
-        "src/App.js",
-    ];
-
-    for candidate in SRC_ENTRY_CANDIDATES {
-        let candidate_path = root.join(candidate);
-        if candidate_path.is_file() {
-            return Some(candidate_path);
-        }
-    }
-
-    None
 }

@@ -3,7 +3,6 @@ import type { AnalysisMode } from "./appTypes";
 
 type GraphCanvasStateProps = {
   analysisMode: AnalysisMode;
-  activeCallEntryFunction: string;
   isLoading: boolean;
   loadError: string | null;
   nodeCount: number;
@@ -38,15 +37,10 @@ function emptyTitle(analysisMode: AnalysisMode): string {
 
 function emptyDescription(
   analysisMode: AnalysisMode,
-  activeCallEntryFunction: string,
   issueCount: number,
 ): string {
-  if (analysisMode === "call" && activeCallEntryFunction) {
-    return `No reachable internal calls were found for "${activeCallEntryFunction}".`;
-  }
-
   if (analysisMode === "call") {
-    return "Try searching for a specific function, or inspect issues if the project could not be analyzed completely.";
+    return "Try searching for a function, or inspect issues if the project could not be analyzed completely.";
   }
 
   if (issueCount > 0) {
@@ -58,7 +52,6 @@ function emptyDescription(
 
 export default function GraphCanvasState({
   analysisMode,
-  activeCallEntryFunction,
   isLoading,
   loadError,
   nodeCount,
@@ -77,7 +70,7 @@ export default function GraphCanvasState({
     ? "Parsing and laying out the project..."
     : loadError
       ? loadError
-      : emptyDescription(analysisMode, activeCallEntryFunction, issueCount);
+      : emptyDescription(analysisMode, issueCount);
 
   return (
     <div style={overlayStyle}>

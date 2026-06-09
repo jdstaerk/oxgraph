@@ -281,6 +281,37 @@ export function Page() {
 }
 
 #[test]
+fn directory_scope_finds_entry_function_in_nested_source_file() {
+    let dir = create_test_dir("directory-call-scope");
+    fs::write(dir.join("package.json"), "{}").unwrap();
+    fs::create_dir_all(dir.join("screens/home")).unwrap();
+    fs::create_dir_all(dir.join("components")).unwrap();
+    fs::write(
+        dir.join("screens/home/page.tsx"),
+        "import { Card } from '../../components/Card';\nexport function Page() { return <Card />; }\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("components/Card.tsx"),
+        "export function Card() { return null; }\n",
+    )
+    .unwrap();
+
+    let graph = build_call_graph(&dir, Some("Page")).unwrap();
+
+    assert!(graph.nodes.iter().any(|node| node.name == "Page"));
+    assert!(graph.nodes.iter().any(|node| node.name == "Card"));
+    assert!(graph.edges.iter().any(|edge| {
+        edge.callee_name == "Card"
+            && edge.kind == CallEdgeKind::Import
+            && edge.confidence == CallConfidence::High
+            && !edge.unresolved
+    }));
+
+    fs::remove_dir_all(dir).ok();
+}
+
+#[test]
 fn filters_entry_function_to_full_caller_and_callee_lines() {
     let dir = create_test_dir("recursive-entry-filter");
     fs::write(
@@ -351,23 +382,26 @@ fn in_memory_domain_only_analysis() {
     );
 
     let node_names: HashSet<&str> = analysis.nodes.iter().map(|n| n.name.as_str()).collect();
-    
+
     // Should track internal functions and JSX usage
     assert!(node_names.contains("Local"));
     assert!(node_names.contains("App"));
-    
+
     // Should NOT contain external/native calls in nodes (Domain-Only)
     assert!(!node_names.contains("useState"));
     assert!(!node_names.contains("log"));
     assert!(!node_names.contains("div"));
 
-    let edge_callees: HashSet<&str> = analysis.pending_edges.iter().map(|e| e.callee_name.as_str()).collect();
-    
+    let edge_callees: HashSet<&str> = analysis
+        .pending_edges
+        .iter()
+        .map(|e| e.callee_name.as_str())
+        .collect();
+
     // Should track calls to internal functions
     assert!(edge_callees.contains("Local"));
-    
+
     // Should NOT track calls to external/native
     assert!(!edge_callees.contains("useState"));
     assert!(!edge_callees.contains("log"));
 }
-

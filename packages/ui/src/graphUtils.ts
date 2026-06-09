@@ -51,6 +51,24 @@ export function applySearchHighlights(
   };
 }
 
+export function filterGraphByGhostVisibility(
+  graph: LayoutedGraph,
+  showGhostNodes: boolean,
+): LayoutedGraph {
+  if (showGhostNodes) {
+    return graph;
+  }
+
+  const visibleNodes = graph.nodes.filter((node) => node.data.kind !== "ghost");
+  const visibleNodeIds = new Set(visibleNodes.map((node) => node.id));
+  const visibleEdges = graph.edges.filter(
+    (edge) =>
+      visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target),
+  );
+
+  return { nodes: visibleNodes, edges: visibleEdges };
+}
+
 function collectFocusedNodeIds(
   startNodeId: string,
   edges: LayoutedGraph["edges"],

@@ -25,7 +25,12 @@ const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFilePath);
 const defaultPort = Number(process.env.OXGRAPH_PORT ?? 8888);
 const uiDistDir = path.resolve(currentDir, "../../public-ui");
-const defaultEntryPath = path.resolve(process.cwd(), "packages/ui/src/main.tsx");
+const defaultEntryPath = path.resolve(
+  process.cwd(),
+  "packages/ui/src/main.tsx",
+);
+const dependencyGraphRoute = "/api/graph-data/dependencies";
+const callGraphRoute = "/api/graph-data/call-graph";
 
 function parseCliOptions(): CliOptions {
   const args = process.argv.slice(2);
@@ -35,8 +40,7 @@ function parseCliOptions(): CliOptions {
   const flaggedTargetPath =
     targetFlagIndex !== -1 ? args[targetFlagIndex + 1] : undefined;
   const positionalTargetPath = args.find(
-    (arg, index) =>
-      !arg.startsWith("-") && index !== targetFlagIndex + 1,
+    (arg, index) => !arg.startsWith("-") && index !== targetFlagIndex + 1,
   );
   const targetPath = flaggedTargetPath || positionalTargetPath;
 
@@ -123,12 +127,12 @@ export function createAppServer(
   return createServer((req, res) => {
     const requestUrl = new URL(req.url ?? "/", "http://localhost");
 
-    if (requestUrl.pathname === "/api/graph-data") {
+    if (requestUrl.pathname === dependencyGraphRoute) {
       sendJson(res, dependencyGraphData);
       return;
     }
 
-    if (requestUrl.pathname === "/api/call-graph-data") {
+    if (requestUrl.pathname === callGraphRoute) {
       const entryFunction =
         requestUrl.searchParams.get("entryFunction")?.trim() || undefined;
 
@@ -159,7 +163,11 @@ function listenWithFallback(
   port: number,
   attempt = 0,
 ): void {
-  const server = createAppServer(options.targetPath, graphData, options.apiOnly);
+  const server = createAppServer(
+    options.targetPath,
+    graphData,
+    options.apiOnly,
+  );
 
   server.once("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE" && attempt < 10) {

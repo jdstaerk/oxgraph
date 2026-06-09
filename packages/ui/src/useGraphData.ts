@@ -14,7 +14,6 @@ import { getLayoutedElements } from "./layout";
 
 type UseGraphDataOptions = {
   analysisMode: AnalysisMode;
-  activeCallEntryFunction: string;
 };
 
 type UseGraphDataResult = {
@@ -44,26 +43,14 @@ async function graphResponseErrorMessage(response: Response): Promise<string> {
   }
 }
 
-function graphEndpoint(
-  analysisMode: AnalysisMode,
-  activeCallEntryFunction: string,
-): string {
-  if (analysisMode === "dependency") {
-    return "/api/graph-data";
-  }
-
-  if (activeCallEntryFunction) {
-    return `/api/call-graph-data?entryFunction=${encodeURIComponent(
-      activeCallEntryFunction,
-    )}`;
-  }
-
-  return "/api/call-graph-data";
+function graphEndpoint(analysisMode: AnalysisMode): string {
+  return analysisMode === "dependency"
+    ? "/api/graph-data/dependencies"
+    : "/api/graph-data/call-graph";
 }
 
 export function useGraphData({
   analysisMode,
-  activeCallEntryFunction,
 }: UseGraphDataOptions): UseGraphDataResult {
   const [graph, setGraph] = useState<GraphPayload>(emptyGraph);
   const [layoutedGraph, setLayoutedGraph] =
@@ -71,10 +58,7 @@ export function useGraphData({
   const [metrics, setMetrics] = useState<GraphMetrics | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const endpoint = useMemo(
-    () => graphEndpoint(analysisMode, activeCallEntryFunction),
-    [activeCallEntryFunction, analysisMode],
-  );
+  const endpoint = useMemo(() => graphEndpoint(analysisMode), [analysisMode]);
 
   useEffect(() => {
     let isActive = true;
@@ -100,6 +84,7 @@ export function useGraphData({
         const layoutedElements = await getLayoutedElements(
           graphPayload.nodes,
           graphPayload.edges,
+          analysisMode,
         );
         const layoutFinishedAt = performance.now();
 

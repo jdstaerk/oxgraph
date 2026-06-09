@@ -27,18 +27,18 @@ describe("CLI Server", () => {
     issues: [],
   };
 
-  it("serves the dependency graph at /api/graph-data", async () => {
+  it("serves the dependency graph at /api/graph-data/dependencies", async () => {
     const server = createAppServer("dummy-path", mockGraphData, true);
-    const response = await request(server).get("/api/graph-data");
+    const response = await request(server).get("/api/graph-data/dependencies");
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(mockGraphData);
   });
 
-  it("serves the call graph at /api/call-graph-data", async () => {
+  it("serves the call graph at /api/graph-data/call-graph", async () => {
     const server = createAppServer("dummy-path", mockGraphData, true);
     const response = await request(server).get(
-      "/api/call-graph-data?entryFunction=start",
+      "/api/graph-data/call-graph?entryFunction=start",
     );
 
     expect(response.status).toBe(200);

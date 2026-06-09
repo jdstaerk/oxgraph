@@ -3,7 +3,11 @@ use oxc_resolver::{ResolveOptions, Resolver, TsconfigDiscovery, TsconfigOptions}
 use std::path::{Path, PathBuf};
 
 pub(crate) fn create_module_resolver(entry_path: &Path) -> Resolver {
-    let entry_dir = entry_path.parent().unwrap_or(entry_path);
+    let entry_dir = if entry_path.is_dir() {
+        entry_path
+    } else {
+        entry_path.parent().unwrap_or(entry_path)
+    };
     let tsconfig = find_tsconfig(entry_dir);
 
     let options = ResolveOptions {
