@@ -1,8 +1,11 @@
 {
   "name": "@oxgraph/cli",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "files": [
+    "dist",
+    "public-ui"
+  ],
   "bin": {
     "oxgraph": "./dist/bin/oxgraph.js"
   },

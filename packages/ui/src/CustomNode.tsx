@@ -1,10 +1,11 @@
 import { Handle, Position, type NodeProps } from "reactflow";
 import type { CSSProperties } from "react";
 import type { GraphNodeData } from "./graphTypes";
+import { nodeBadges, nodeSubtitle } from "./nodeDisplay";
 
 const nodeStyleBase: CSSProperties = {
-  width: 200,
-  minHeight: 50,
+  width: 240,
+  minHeight: 56,
   padding: "8px 12px",
   color: "#f8fafc",
   borderRadius: 8,
@@ -12,6 +13,15 @@ const nodeStyleBase: CSSProperties = {
   fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
   boxShadow: "0 8px 24px rgba(0, 0, 0, 0.22)",
   textAlign: "left",
+};
+
+const badgeStyle: CSSProperties = {
+  border: "1px solid #475569",
+  borderRadius: 999,
+  padding: "2px 6px",
+  color: "#cbd5e1",
+  fontSize: 10,
+  lineHeight: 1,
 };
 
 function borderFor(data: GraphNodeData): string {
@@ -43,6 +53,8 @@ function backgroundFor(data: GraphNodeData): string {
 }
 
 export default function CustomNode({ data }: NodeProps<GraphNodeData>) {
+  const badges = nodeBadges(data);
+
   return (
     <div
       title={data.path || data.label}
@@ -73,16 +85,32 @@ export default function CustomNode({ data }: NodeProps<GraphNodeData>) {
       <div
         style={{
           marginTop: 6,
-          display: "flex",
-          gap: 6,
           color: "#cbd5e1",
           fontSize: 11,
-          lineHeight: 1,
+          lineHeight: 1.2,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
         }}
       >
-        <span>{data.kind}</span>
-        <span>{data.status}</span>
+        {nodeSubtitle(data)}
       </div>
+      {badges.length > 0 ? (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 4,
+            marginTop: 7,
+          }}
+        >
+          {badges.map((badge) => (
+            <span key={badge} style={badgeStyle}>
+              {badge}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       <Handle
         type="source"

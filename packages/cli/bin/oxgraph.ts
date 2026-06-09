@@ -25,10 +25,6 @@ const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = path.dirname(currentFilePath);
 const defaultPort = Number(process.env.OXGRAPH_PORT ?? 8888);
 const uiDistDir = path.resolve(currentDir, "../../public-ui");
-const defaultEntryPath = path.resolve(
-  process.cwd(),
-  "packages/ui/src/main.tsx",
-);
 const dependencyGraphRoute = "/api/graph-data/dependencies";
 const callGraphRoute = "/api/graph-data/call-graph";
 
@@ -54,10 +50,6 @@ function parseCliOptions(): CliOptions {
 function resolveTargetPath(cliPath?: string): string {
   if (cliPath) {
     return path.resolve(process.cwd(), cliPath);
-  }
-
-  if (existsSync(defaultEntryPath)) {
-    return defaultEntryPath;
   }
 
   return process.cwd();

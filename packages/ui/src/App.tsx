@@ -19,6 +19,7 @@ import "reactflow/dist/style.css";
 import type { AnalysisMode, GraphMode } from "./appTypes";
 import CustomNode from "./CustomNode";
 import GraphCanvasState from "./GraphCanvasState";
+import GraphStartPanel from "./GraphStartPanel";
 import GraphToolbar from "./GraphToolbar";
 import IssuesPanel from "./IssuesPanel";
 import type { GraphEdgeData, GraphIssue, GraphNodeData } from "./graphTypes";
@@ -26,6 +27,7 @@ import {
   applySearchHighlights,
   filterGraphByGhostVisibility,
   filterGraphByFocus,
+  getGraphStartPoints,
   matchesSearchQuery,
   normalizeSearchQuery,
 } from "./graphUtils";
@@ -92,7 +94,7 @@ export default function App() {
   const [graphMode, setGraphMode] = useState<GraphMode>("graph");
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showGhostNodes, setShowGhostNodes] = useState(true);
+  const [showGhostNodes, setShowGhostNodes] = useState(false);
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNodeData>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<GraphEdgeData>([]);
   const { graph, layoutedGraph, metrics, loadError, isLoading } =
@@ -233,6 +235,10 @@ export default function App() {
     () => layoutedGraph.nodes.filter((node) => node.data.kind === "ghost").length,
     [layoutedGraph.nodes],
   );
+  const startPoints = useMemo(
+    () => getGraphStartPoints(visibleBaseGraph, analysisMode),
+    [analysisMode, visibleBaseGraph],
+  );
 
   return (
     <div style={appStyle}>
@@ -286,9 +292,16 @@ export default function App() {
               analysisMode={analysisMode}
               isLoading={isLoading}
               loadError={loadError}
-              nodeCount={graph.nodes.length}
+              nodeCount={visibleBaseGraph.nodes.length}
               issueCount={graph.issues.length}
             />
+            {!focusedNodeId ? (
+              <GraphStartPanel
+                analysisMode={analysisMode}
+                startPoints={startPoints}
+                onSelect={selectSearchResult}
+              />
+            ) : null}
             <IssuesPanel
               issues={graph.issues}
               onIssueSelect={handleIssueSelect}

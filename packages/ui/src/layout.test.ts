@@ -65,7 +65,7 @@ describe("layouting service", () => {
     expect(result.edges).toHaveLength(2);
     expect(result.edges.some((edge) => edge.source === edge.target)).toBe(false);
     expect(result.nodes.find((node) => node.id === "a")?.position.x).toBe(0);
-    expect(result.nodes.find((node) => node.id === "b")?.position.x).toBe(340);
-    expect(result.nodes.find((node) => node.id === "c")?.position.x).toBe(680);
+    expect(result.nodes.find((node) => node.id === "b")?.position.x).toBe(400);
+    expect(result.nodes.find((node) => node.id === "c")?.position.x).toBe(800);
   });
 });
