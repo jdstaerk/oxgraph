@@ -29,11 +29,13 @@
     "format:check": "pnpm run format:check:core && pnpm run format:check:ui && pnpm run format:check:cli",
     "format": "pnpm run format:fix",
     "build": "pnpm -r build",
-    "dev": "pnpm run build && pnpm -r --parallel run dev",
+    "build:demo": "pnpm --filter @oxgraph/ui run build:demo",
+    "dev": "node scripts/dev.mjs",
+    "dev:demo": "pnpm --filter @oxgraph/ui run dev:demo",
     "oxgraph": "node packages/cli/dist/bin/oxgraph.js",
     "oxgraph:build": "pnpm run build && node packages/cli/dist/bin/oxgraph.js"
   },
-  "packageManager": "pnpm@10.29.3",
+  "packageManager": "pnpm@11.5.3",
   "devDependencies": {
     "oxc": "^1.0.1",
     "oxlint": "latest",

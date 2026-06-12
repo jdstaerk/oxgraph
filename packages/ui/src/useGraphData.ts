@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AnalysisMode, GraphMetrics } from "./appTypes";
+import { demoCallGraph, demoDependencyGraph } from "./demoGraphData";
 import type {
   GraphPayload,
   GraphResponse,
@@ -23,6 +24,8 @@ type UseGraphDataResult = {
   loadError: string | null;
   isLoading: boolean;
 };
+
+const isDemoMode = import.meta.env.VITE_OXGRAPH_DEMO === "true";
 
 async function graphResponseErrorMessage(response: Response): Promise<string> {
   const fallback = `Failed to load graph data (${response.status} ${response.statusText})`;
@@ -49,6 +52,22 @@ function graphEndpoint(analysisMode: AnalysisMode): string {
     : "/api/graph-data/call-graph";
 }
 
+async function loadGraphResponse(
+  endpoint: string,
+  analysisMode: AnalysisMode,
+): Promise<GraphResponse> {
+  if (isDemoMode) {
+    return analysisMode === "dependency" ? demoDependencyGraph : demoCallGraph;
+  }
+
+  const response = await fetch(endpoint);
+  if (!response.ok) {
+    throw new Error(await graphResponseErrorMessage(response));
+  }
+
+  return (await response.json()) as GraphResponse;
+}
+
 export function useGraphData({
   analysisMode,
 }: UseGraphDataOptions): UseGraphDataResult {
@@ -72,12 +91,7 @@ export function useGraphData({
 
     const fetchGraph = async () => {
       try {
-        const response = await fetch(endpoint);
-        if (!response.ok) {
-          throw new Error(await graphResponseErrorMessage(response));
-        }
-
-        const responseBody = (await response.json()) as GraphResponse;
+        const responseBody = await loadGraphResponse(endpoint, analysisMode);
         const fetchFinishedAt = performance.now();
         const graphPayload = normalizeGraphResponse(responseBody);
         const layoutStartedAt = performance.now();
@@ -116,7 +130,7 @@ export function useGraphData({
     return () => {
       isActive = false;
     };
-  }, [endpoint]);
+  }, [analysisMode, endpoint]);
 
   return { graph, layoutedGraph, metrics, loadError, isLoading };
 }

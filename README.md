@@ -1,95 +1,143 @@
 # oxgraph
 
-oxgraph is a codebase visualization tool for modern JavaScript and TypeScript projects. It analyzes a project with a native Rust backend and renders the result as an interactive graph in the browser.
+<p align="center">
+  <strong>Fast codebase maps for JavaScript and TypeScript projects.</strong><br />
+  Rust-powered dependency and call graph analysis with an interactive React Flow UI.
+</p>
 
-The project currently focuses on two views:
+<p align="center">
+  <a href="https://github.com/jdstaerk/oxgraph/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/jdstaerk/oxgraph/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://www.npmjs.com/package/@oxgraph/cli"><img alt="npm" src="https://img.shields.io/npm/v/@oxgraph/cli?color=0ea5e9" /></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
+  <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D18-339933" />
+</p>
 
-- **Dependency Graph**: how files and modules depend on each other.
-- **Call Graph**: how functions, methods, and React components call or render each other.
+<p align="center">
+  <a href="https://jdstaerk.github.io/oxgraph/">Live demo</a>
+  ·
+  <a href="#quick-start">Quick start</a>
+  ·
+  <a href="#local-development">Local development</a>
+  ·
+  <a href="#architecture">Architecture</a>
+</p>
 
-oxgraph is especially useful for React codebases today. In addition to normal function calls, the call graph treats JSX component usage such as `<AddItemForm />` as a component call, while filtering out native HTML tags and most external framework noise.
+oxgraph turns a codebase into a browsable architecture graph. Point it at a JavaScript or TypeScript project and it starts a local UI where you can inspect imports, unresolved modules, function calls, and React component render paths.
 
-## Project Status
+## Why oxgraph
 
-oxgraph is in active MVP development. The current implementation is already able to analyze local projects, resolve internal imports, generate dependency graphs, and build a best-effort call graph. APIs, CLI flags, and output formats may still change before a stable release.
+Most JavaScript graphing tools keep parsing and analysis in Node.js. oxgraph moves the expensive work into a native Rust engine built on the Oxc ecosystem, then sends only a compact React Flow payload to the browser.
 
-## Why oxgraph?
+- Fast dependency graphs for JS, JSX, TS, and TSX source files.
+- Call graphs for functions, methods, arrow functions, and React component usage.
+- TypeScript path alias and Node-style module resolution through `oxc_resolver`.
+- Noise reduction for framework internals and third-party packages.
+- Interactive UI with search, focus depth, ghost nodes, issues, minimap, and raw JSON view.
+- Static demo mode for GitHub Pages or any static host.
 
-Most JavaScript tooling builds on top of Node.js parsers and moves large intermediate structures through the JavaScript runtime. oxgraph takes a different approach:
+## Quick Start
 
-- Parsing and semantic analysis happen in Rust.
-- The full AST stays inside the Rust process.
-- Only compact graph data is sent to Node.js and the browser.
-- The UI receives a React Flow-compatible `{ nodes, edges, issues }` payload.
-
-This keeps the runtime boundary small and makes the tool suitable for fast local architecture exploration.
-
-## Features
-
-- Fast parsing with the Oxidation Compiler ecosystem (`oxc`)
-- File dependency graph generation
-- Best-effort function and method call graph generation
-- JSX component usage detection for React projects
-- Internal import and re-export resolution
-- TypeScript path alias support through resolver configuration
-- Domain-only call graph filtering to reduce framework and native API noise
-- Interactive React Flow UI with **MiniMap for macro-architecture overview**
-- **Adjustable Focus Depth** to cleanly isolate specific functions and their immediate callers/callees
-- Automatic graph layout with ELK
-- Search, focus mode, raw JSON view, and issue reporting
-
-## Installation
-
-To run oxgraph directly without installing it globally, you can use `npx`:
+You only need Node.js 18 or newer. For one-off use, do not install anything globally:
 
 ```bash
-npx @oxgraph/cli --file "C:/path/to/project/src"
+# Analyze the current repository
+npx @oxgraph/cli@latest .
+
+# Or use pnpm's dlx runner
+pnpm dlx @oxgraph/cli .
 ```
 
-If you prefer to install it locally for development:
+The CLI analyzes the target, starts a local web server, and opens the graph UI. By default it starts at `http://localhost:8888`; if that port is busy, oxgraph tries the next available ports.
+
+To start from a specific file instead of scanning a whole directory:
 
 ```bash
+npx @oxgraph/cli@latest --file src/main.tsx
+```
+
+Useful runtime options:
+
+| Option | Description |
+| --- | --- |
+| `--file <path>`, `-f <path>` | Analyze a specific entry file. Positional paths also work, for example `npx @oxgraph/cli@latest src/main.tsx`. |
+| `--no-open` | Start the server without opening a browser. |
+| `--api-only` | Serve only the JSON API endpoints. Useful with the Vite UI dev server. |
+| `OXGRAPH_PORT=3000` | Override the default server port. |
+
+For repeated use, a global install is optional:
+
+```bash
+npm install -g @oxgraph/cli
+oxgraph .
+```
+
+## Live Demo
+
+The live demo is a static Vite build. It uses checked-in sample graph data and does not run Rust analysis or read visitor files in the browser.
+
+```bash
+# Run the static demo locally
+pnpm run dev:demo
+
+# Build the static demo into packages/ui/dist
+pnpm run build:demo
+```
+
+`build:demo` creates plain HTML, CSS, and JS with demo data bundled into the app. GitHub Pages serves those static files without a Node server or port. The `5173` port is only used by `dev:demo` for local Vite preview and hot reload.
+
+This repository also includes `.github/workflows/pages.yml`, which builds the demo and deploys `packages/ui/dist` to GitHub Pages on pushes to `main`.
+
+## Local Development
+
+Clone the repo and install the workspace:
+
+```bash
+git clone https://github.com/jdstaerk/oxgraph.git
+cd oxgraph
+corepack enable
 pnpm install
+```
+
+Build every package:
+
+```bash
 pnpm run build
 ```
 
-## Usage
-
-Analyze a project or source directory:
+Run the locally built CLI against the current repository:
 
 ```bash
-npx @oxgraph/cli .
-# or if developing locally:
-pnpm run oxgraph .
+pnpm run oxgraph -- .
 ```
 
-When a directory is passed (either implicitly like `.` or explicitly via `--file`), oxgraph treats it as the analysis scope and scans supported JavaScript and TypeScript source files below that directory. This is intentionally framework-neutral: Vite apps, Next.js apps, libraries, and custom project layouts are handled through the same directory-scan behavior.
-
-Analyze a specific entry file:
-
-```bash
-npx @oxgraph/cli src/main.tsx
-```
-
-When a file is passed, oxgraph starts from that file and follows its reachable imports.
-
-For a fresh checkout of this repository, or after changing the Rust core or UI, use:
-
-```bash
-pnpm run oxgraph:build --file "C:/path/to/project/src"
-```
-
-The CLI starts a local server and opens the browser automatically. By default, the server runs on `http://localhost:8888`.
-
-## Development
-
-Run the full development setup:
+Start the workspace development mode:
 
 ```bash
 pnpm run dev
 ```
 
-Run individual checks:
+That compiles the Rust core in debug mode, starts the CLI API server against the repository root, and starts the Vite UI. Open `http://localhost:5173` for the dev UI; the API runs on `http://localhost:8888`.
+
+To analyze a different target in dev mode, pass CLI arguments after `--`:
+
+```bash
+pnpm run dev -- --file path/to/main.tsx
+pnpm run dev -- path/to/project
+```
+
+Command reference:
+
+| Command | Purpose |
+| --- | --- |
+| `pnpm run dev` | Fast local development: debug native build, API server, and Vite UI. Defaults to analyzing `.`. |
+| `pnpm run dev -- --file src/main.tsx` | Same dev servers, but analyzes a specific file. |
+| `pnpm run build` | Full release/package build. This can take a while because it compiles the Rust native addon in release mode. |
+| `pnpm run oxgraph -- .` | Run the already-built local CLI against the current directory. |
+| `pnpm run oxgraph:build -- .` | Run the full build first, then run the local CLI. |
+
+The CLI analyzes the path you pass after `--`. If no path is passed, it uses the current working directory.
+
+## Quality Checks
 
 ```bash
 pnpm run type-check
@@ -98,89 +146,49 @@ pnpm run test
 pnpm run format:check
 ```
 
-Build everything:
-
-```bash
-pnpm run build
-```
+The current validation pipeline uses TypeScript, Cargo tests, Vitest, `cargo clippy`, and `oxlint`.
 
 ## Monorepo Layout
 
 ```text
-packages/
-  core/   Rust parser, resolver, graph builder, and NAPI export
-  cli/    Node CLI and local web server
-  ui/     Vite + React Flow frontend
+oxgraph/
+├── packages/
+│   ├── core/      # Rust parser, resolver, graph builder, and NAPI bindings
+│   ├── cli/       # Node.js CLI, local HTTP server, and packaged UI assets
+│   └── ui/        # Vite + React + React Flow graph interface
+├── .github/
+│   └── workflows/ # CI, release, and static demo deployment
+└── README.md
 ```
 
 ## Architecture
 
-oxgraph is split into three packages with a narrow data contract between each layer.
-
 ### `@oxgraph/core`
 
-The core package is written in Rust. It is responsible for parsing, resolving, and graph generation.
-
-Key responsibilities:
-
-- Parse JavaScript, TypeScript, JSX, and TSX files with `oxc`.
-- Extract static imports, dynamic imports, re-exports, `export *`, and CommonJS `require(...)`.
-- Resolve module paths through `oxc_resolver`.
-- Build a recursive file dependency graph from an entry file or source directory.
-- Use `oxc_semantic` for call graph analysis.
-- Resolve local function calls, class methods, internal imports, re-exports, and JSX component usage.
-- Filter out external package calls and unresolved native/member calls that do not help explain project-specific logic.
-
-The AST does not leave Rust. The exported NAPI functions return compact graph data:
-
-```json
-{
-  "nodes": [],
-  "edges": [],
-  "issues": []
-}
-```
+The native Rust engine parses source files with Oxc, resolves imports, builds dependency and call graph models, and exposes NAPI bindings for Node.js.
 
 ### `@oxgraph/cli`
 
-The CLI package is a thin Node.js layer around the native Rust core.
+The CLI calls the native engine, starts a local HTTP server, serves the bundled UI, and exposes graph data at:
 
-Key responsibilities:
-
-- Parse CLI arguments.
-- Call the native Rust graph extraction functions through NAPI.
-- Start a local HTTP server.
-- Serve the built UI.
-- Expose graph data through local API endpoints.
-
-The CLI currently serves both the browser app and the graph API from one local process.
+- `/api/graph-data/dependencies`
+- `/api/graph-data/call-graph`
 
 ### `@oxgraph/ui`
 
-The UI package is a Vite React application using React Flow.
+The React UI fetches graph payloads, lays them out with ELK/React Flow, and provides search, focus, issue inspection, ghost-node visibility, and raw JSON views.
 
-Key responsibilities:
-
-- Fetch graph data from the local CLI server.
-- Run ELK layouting in the browser.
-- Render dependency graphs and call graphs.
-- Provide search, focus mode, issue display, raw JSON inspection, and graph navigation.
-
-The UI does not access the filesystem directly. It only consumes the graph JSON returned by the CLI API.
-
-## Graph Data Contract
-
-Nodes and edges are shaped for React Flow. Application-specific metadata lives under `data`.
+The graph payload is intentionally small:
 
 ```json
 {
   "nodes": [
     {
-      "id": "C:\\path\\to\\src\\main.tsx",
+      "id": "src/App.tsx",
       "type": "custom",
       "data": {
-        "label": "main.tsx",
-        "path": "C:\\path\\to\\src\\main.tsx",
+        "label": "App.tsx",
+        "path": "src/App.tsx",
         "kind": "entry",
         "status": "resolved",
         "isEntry": true
@@ -189,12 +197,11 @@ Nodes and edges are shaped for React Flow. Application-specific metadata lives u
   ],
   "edges": [
     {
-      "id": "source->target",
-      "source": "source",
-      "target": "target",
+      "id": "src/App.tsx->src/main.tsx",
+      "source": "src/App.tsx",
+      "target": "src/main.tsx",
       "data": {
-        "specifier": "./App",
-        "isCircular": false,
+        "specifier": "./main",
         "unresolved": false
       }
     }
@@ -205,24 +212,12 @@ Nodes and edges are shaped for React Flow. Application-specific metadata lives u
 
 ## Limitations
 
-The call graph is intentionally best-effort. JavaScript and TypeScript allow highly dynamic call patterns that cannot always be resolved statically. oxgraph currently focuses on practical project-level insight:
+oxgraph performs static analysis. It does not execute your code, so highly dynamic patterns can be incomplete:
 
-- direct function calls
-- class methods where they can be resolved confidently
-- local declarations
-- internal imports and re-exports
-- React JSX component usage
-
-Dynamic dispatch, runtime-generated functions, dependency injection containers, and complex framework conventions may not be fully represented.
-
-## Tooling
-
-The repository uses the Oxidation Compiler ecosystem where possible:
-
-- Rust checks through Cargo, Clippy, and Rustfmt
-- TypeScript type checking with `tsc`
-- JavaScript/TypeScript linting and formatting through `oxlint`
+- Runtime-generated imports or property access, such as `window[name]()`, cannot be fully resolved.
+- Complex dependency injection, HOCs, and metaprogramming may produce disconnected nodes.
+- The strongest results come from explicit ESM imports, TypeScript path aliases, direct calls, and standard React component usage.
 
 ## License
 
-GNU GPLv3. See [LICENSE](./LICENSE).
+MIT. See [LICENSE](./LICENSE).

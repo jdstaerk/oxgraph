@@ -36,6 +36,7 @@ import { useGraphData } from "./useGraphData";
 import { useSearchHotkeys } from "./useSearchHotkeys";
 
 const SEARCH_RESULT_LIMIT = 8;
+const isDemoMode = import.meta.env.VITE_OXGRAPH_DEMO === "true";
 
 const nodeTypes: NodeTypes = {
   custom: CustomNode,
@@ -279,6 +280,7 @@ export default function App() {
         metrics={metrics}
         loadError={loadError}
         isLoading={isLoading}
+        isDemoMode={isDemoMode}
         onAnalysisModeChange={selectAnalysisMode}
         onGraphModeChange={setGraphMode}
         onGhostNodesToggle={toggleGhostNodes}

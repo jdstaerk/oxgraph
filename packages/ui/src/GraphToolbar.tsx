@@ -20,6 +20,7 @@ type GraphToolbarProps = {
   metrics: GraphMetrics | null;
   loadError: string | null;
   isLoading: boolean;
+  isDemoMode: boolean;
   onAnalysisModeChange: (mode: AnalysisMode) => void;
   onGraphModeChange: (mode: GraphMode) => void;
   onGhostNodesToggle: () => void;
@@ -81,6 +82,7 @@ export default function GraphToolbar({
   metrics,
   loadError,
   isLoading,
+  isDemoMode,
   onAnalysisModeChange,
   onGraphModeChange,
   onGhostNodesToggle,
@@ -96,7 +98,23 @@ export default function GraphToolbar({
 
   return (
     <div style={headerStyle}>
-      <div style={{ fontSize: 14, fontWeight: 700 }}>oxgraph</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>oxgraph</div>
+        {isDemoMode ? (
+          <span
+            style={{
+              border: "1px solid #0f766e",
+              borderRadius: 999,
+              color: "#5eead4",
+              fontSize: 11,
+              lineHeight: 1,
+              padding: "3px 7px",
+            }}
+          >
+            Demo data
+          </span>
+        ) : null}
+      </div>
       <div style={{ display: "flex", gap: 8 }}>
         <button
           type="button"
