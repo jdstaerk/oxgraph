@@ -5,12 +5,17 @@ on:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
+permissions:
+  contents: read
+
+concurrency: release-${{ github.ref }}
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    name: Build - ${{ matrix.settings.target }}
+  build-native:
+    name: Build native - ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
     strategy:
       fail-fast: false
@@ -18,27 +23,39 @@ jobs:
         settings:
           - host: macos-latest
             target: x86_64-apple-darwin
+            build_args: --target x86_64-apple-darwin
           - host: macos-latest
             target: aarch64-apple-darwin
+            build_args: --target aarch64-apple-darwin
           - host: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            build_args: --target x86_64-unknown-linux-gnu --use-napi-cross
           - host: ubuntu-latest
             target: aarch64-unknown-linux-gnu
+            build_args: --target aarch64-unknown-linux-gnu --use-napi-cross
           - host: ubuntu-latest
             target: x86_64-unknown-linux-musl
+            build_args: --target x86_64-unknown-linux-musl --cross-compile
+            needs_zig: true
           - host: ubuntu-latest
             target: aarch64-unknown-linux-musl
+            build_args: --target aarch64-unknown-linux-musl --cross-compile
+            needs_zig: true
           - host: windows-latest
             target: x86_64-pc-windows-msvc
+            build_args: --target x86_64-pc-windows-msvc
           - host: windows-latest
             target: aarch64-pc-windows-msvc
+            build_args: --target aarch64-pc-windows-msvc
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Setup node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22.13
@@ -49,15 +66,30 @@ jobs:
         with:
           targets: ${{ matrix.settings.target }}
 
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/core
+          key: release-${{ matrix.settings.target }}
 
-      - name: Build Core Native Binary
-        run: pnpm --filter @oxgraph/core exec napi build --platform --release --target ${{ matrix.settings.target }}
+      - name: Setup Zig for musl targets
+        if: ${{ matrix.settings.needs_zig == true }}
+        uses: mlugg/setup-zig@v2
+
+      - name: Install cargo-zigbuild for musl targets
+        if: ${{ matrix.settings.needs_zig == true }}
+        run: cargo install cargo-zigbuild --locked
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build native binding
+        shell: bash
+        run: pnpm --filter @oxgraph/core exec napi build --platform --release ${{ matrix.settings.build_args }}
         env:
           CARGO_PROFILE_RELEASE_LTO: true
 
-      - name: Upload artifact
+      - name: Upload native binding
         uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
@@ -65,42 +97,48 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish to NPM
+    name: Publish to npm
     runs-on: ubuntu-latest
-    needs: build
+    needs: build-native
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
-      - name: Setup node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22.13
           cache: pnpm
-          registry-url: 'https://registry.npmjs.org'
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      - name: Download all artifacts
+      - name: Download native bindings
         uses: actions/download-artifact@v4
         with:
           path: packages/core/artifacts
 
-      - name: Move artifacts
+      - name: Collect native bindings
         run: |
-          mkdir -p packages/core/npm
-          cp -r packages/core/artifacts/*/*.node packages/core/
+          find packages/core/artifacts -name '*.node' -type f -exec cp {} packages/core/ \;
+          ls -la packages/core/*.node
+          test "$(find packages/core -maxdepth 1 -name '*.node' | wc -l | tr -d ' ')" = "8"
 
-      - name: Build Frontend & CLI
-        run: pnpm run build
+      - name: Build UI and CLI
+        run: |
+          pnpm --filter @oxgraph/ui run build
+          pnpm --filter @oxgraph/cli run build
 
-      - name: Generate Platform Packages
-        run: pnpm --filter @oxgraph/core exec napi prepublish -t npm
+      - name: Verify package contents
+        run: |
+          pnpm --filter @oxgraph/core pack --dry-run
+          pnpm --filter @oxgraph/cli pack --dry-run
 
-      - name: Publish to NPM
-        run: pnpm publish -r --no-git-checks
+      - name: Publish packages
+        run: pnpm changeset publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
