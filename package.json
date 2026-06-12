@@ -37,6 +37,7 @@
   },
   "packageManager": "pnpm@11.5.3",
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "oxc": "^1.0.1",
     "oxlint": "latest",
     "shx": "^0.4.0"
