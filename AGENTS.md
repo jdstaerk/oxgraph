@@ -1,41 +1,166 @@
 # AI Agent Guidelines
 
-This file contains the foundational architectural context, style constraints, and high-level guardrails for working on the oxgraph workspace. Read and parse this entirely before proposing changes or writing code.
+This file is the architectural compass for AI agents working in the oxgraph workspace. Read it before proposing changes or writing code. Keep changes aligned with the system boundaries, tooling constraints, and call graph rules documented here.
 
 ---
 
-## System Architecture and Stack
+## System Architecture Overview
 
-oxgraph is built as a highly decoupled, clean monorepo designed for long-term maintainability:
-- **packages/core**: Native Rust engine utilizing the oxc ecosystem for parsing and reference tracking. Compiles into a native Node binary via NAPI-RS.
-- **packages/cli**: Node.js wrapper that invokes the native core binary, parses CLI arguments, and hosts a local HTTP server to serve the static frontend.
-- **packages/ui**: React canvas application utilizing reactflow and elkjs for complex DAG (Directed Acyclic Graph) layout execution.
+oxgraph is a decoupled monorepo organized around three distinct layers. Each layer has a narrow responsibility and must avoid leaking implementation concerns into adjacent layers.
+
+### Core Layer: `packages/core`
+
+The core layer is the native Rust engine. It owns source parsing, semantic analysis, reference tracking, call graph extraction, and graph payload generation.
+
+- Use the `oxc` ecosystem for high-speed JavaScript and TypeScript parsing.
+- Use `oxc_semantic` for symbol and reference tracking.
+- Export the public runtime surface through NAPI-RS.
+- Keep parsing and semantic complexity inside Rust.
+- Serialize only the final graph payload required by downstream layers.
+
+### Bridge Layer: `packages/cli`
+
+The bridge layer is the Node.js wrapper around the native engine. It is responsible for command-line ergonomics and local serving, not for code analysis.
+
+- Parse CLI arguments and normalize execution options.
+- Invoke the NAPI-backed core package.
+- Host the local HTTP server used to serve the static frontend.
+- Pass through serialized graph data without recreating core analysis logic.
+- Avoid embedding AST, symbol-resolution, or call-graph domain logic in Node.js.
+
+### Presentation Layer: `packages/ui`
+
+The presentation layer is the React application. It owns graph visualization, user interaction, and layout presentation.
+
+- Use React for the application interface.
+- Use React Flow for graph rendering and interaction primitives.
+- Use `elkjs` for Directed Acyclic Graph layout execution.
+- Treat the graph payload as an input contract from the lower layers.
+- Do not parse source files or infer semantic code relationships in the UI.
 
 ---
 
 ## Strict Guardrails and Tooling Constraints
 
-1. **No ESLint / No Prettier**: We rely entirely on the Oxidation Compiler ecosystem to maintain a fast, clean codebase. Use oxlint for linting and the oxc formatter for code styling. Do not introduce configuration files for other linting or formatting tools.
-2. **Encapsulated AST**: The Abstract Syntax Tree must never cross the boundary into Node.js. The Rust core must encapsulate all parsing complexity and serialize only a lean, flat, React Flow-compatible JSON payload. This keeps the layer boundary clean.
-3. **Data Contract Integrity**: Ensure all graph transformation utilities maintain the strict node, edge, and issue schemas required by the frontend application without mixing concerns.
+### Code Quality Tooling
+
+This workspace lives within the Oxidation Compiler ecosystem for linting and formatting.
+
+- Use `oxlint` for JavaScript and TypeScript linting.
+- Use the `oxc` formatter for code styling.
+- Do not introduce ESLint, Prettier, or their configuration files.
+- Do not add `.eslintrc`, `eslint.config.*`, `.prettierrc`, `prettier.config.*`, or equivalent configuration files.
+- Do not solve formatting or linting issues by adding unrelated tooling.
+
+### AST Encapsulation
+
+The full Abstract Syntax Tree must stay entirely within Rust memory.
+
+- The AST must never cross the FFI boundary into Node.js.
+- Node.js must not receive, inspect, transform, or persist raw AST structures.
+- The UI must never depend on parser-specific AST shapes.
+- The only data allowed to cross from the core layer is a lean, flat, serialized graph payload matching the React Flow-compatible schema.
+- Serialized payloads must contain only the node, edge, metadata, and issue fields required by the frontend contract.
+
+### Data Contract Integrity
+
+Graph transformation utilities must preserve layer boundaries and schema clarity.
+
+- Keep node, edge, and issue schemas explicit and stable.
+- Do not mix parsing concerns into presentation utilities.
+- Do not mix rendering concerns into the Rust graph extraction engine.
+- Prefer narrow, typed payloads over broad transport objects.
+- Any schema change must be reflected across the core, CLI, UI, and tests.
 
 ---
 
-## Call Graph Core Rules (Domain-Only Logic)
+## Call Graph Core Logic
 
-When modifying or expanding the call graph extraction engine in packages/core, you must strictly respect the noise-reduction pipeline:
+The call graph engine is domain-focused. Its purpose is to reveal meaningful internal code relationships, not to render every syntactic call expression.
 
-- **Internal Scope Focus**: Only map function, arrow-function, or method symbols that resolve to internal workspace declarations or internal cross-file imports.
-- **Discard Framework Clutter**: Aggressively discard calls originating from third-party npm modules. Do not generate edges for underlying framework utilities.
-- **Discard Native Members**: Ignore standard JavaScript prototype methods.
-- **JSX Resolution**: Treat capitalized JSX opening elements exactly like a standard domain function call edge. Resolve its identifier symbol. Ignore lowercase native HTML elements.
-- **Orphan Pruning**: After filtering edges, strip out any functional node that contains zero incoming and zero outgoing connections to preserve graph cleanliness and readability.
+### Domain Focus
+
+Only map functional symbols that resolve to internal workspace code.
+
+- Include function declarations.
+- Include arrow-function declarations assigned to internal symbols.
+- Include methods declared inside internal classes or object structures.
+- Include symbols resolved through internal cross-file imports.
+- Exclude unresolved calls unless they can be proven to represent internal workspace declarations.
+
+### Noise Reduction
+
+Discard implementation noise that does not represent domain-level ownership.
+
+- Ignore calls originating from third-party npm modules.
+- Do not generate graph edges for external framework utilities.
+- Ignore standard native JavaScript prototype methods such as `.map()`, `.filter()`, `.reduce()`, `.trim()`, `.split()`, and similar built-ins.
+- Avoid promoting library hooks, rendering helpers, or runtime utilities into domain graph nodes unless they resolve to internal declarations.
+
+### JSX Handling
+
+JSX must follow the same domain-resolution rules as standard calls.
+
+- Treat capitalized JSX opening elements as functional call edges.
+- Resolve the JSX identifier symbol before creating an edge.
+- Create JSX-derived edges only when the symbol resolves to an internal declaration or internal cross-file import.
+- Ignore lowercase JSX elements because they represent native HTML elements.
+
+### Cleanliness
+
+The final graph payload must remain visually meaningful.
+
+- After edge filtering, run orphan pruning.
+- Remove functional nodes with zero incoming and zero outgoing edges.
+- Remove unconnected nodes that do not contribute to the final visualization.
+- Preserve issue reporting separately from graph cleanliness when diagnostics are still useful.
 
 ---
 
-## Testing and Quality Workflow
+## Quality and Testing Pipeline
 
-Maintainability is a core pillar of this project. Before declaring a task complete, verify that the quality pipeline passes:
-- **Rust Core**: Run cargo test. Use in-memory string parsing for AST verification; do not read or write physical test files to the disk unless absolutely necessary.
-- **Frontend and CLI**: Run vitest inside their respective package directories.
-- **Workspace Validation**: Run pnpm test from the root directory to execute all test suites across the monorepo concurrently.
+Testing is a core pillar of maintainability. Before declaring work complete, run the validation path that matches the affected layers, then run the full workspace pipeline when practical.
+
+### Rust Core
+
+Use Cargo tests for internal parsing, semantic-resolution, and graph-extraction logic.
+
+```sh
+cargo test
+```
+
+- Run from `packages/core` when validating the Rust engine directly.
+- Prefer in-memory source strings for parser and AST-related tests.
+- Do not read or write physical test files unless filesystem behavior is the subject of the test.
+
+### CLI Package
+
+Use Vitest for the Node.js bridge layer.
+
+```sh
+pnpm --filter @oxgraph/cli run test
+```
+
+- Validate CLI argument handling, NAPI invocation boundaries, server behavior, and payload transport.
+- Do not duplicate Rust parsing assertions in CLI tests.
+
+### UI Package
+
+Use Vitest for the React presentation layer.
+
+```sh
+pnpm --filter @oxgraph/ui run test
+```
+
+- Validate graph utilities, layout behavior, rendering contracts, and user-facing state transitions.
+- Keep tests focused on the serialized payload contract rather than AST internals.
+
+### Workspace Validation
+
+Run the complete test suite from the repository root before considering cross-layer work complete.
+
+```sh
+pnpm test
+```
+
+This command runs the repository test suites through the workspace scripts and is the final validation path for changes that affect multiple packages.
