@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Codebase dependency visualizer and call graph generator",
   "engines": {
-    "node": ">= 18"
+    "node": ">=22.13"
   },
   "scripts": {
     "clean": "shx rm -rf packages/core/target packages/core/*.node packages/ui/dist packages/cli/public-ui packages/cli/dist",

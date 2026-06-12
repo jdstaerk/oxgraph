@@ -2,6 +2,9 @@
   "name": "@oxgraph/cli",
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
   "files": [
     "dist",
     "public-ui"

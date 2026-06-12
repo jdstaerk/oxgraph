@@ -41,7 +41,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.13
           cache: pnpm
 
       - name: Install Rust
@@ -77,7 +77,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.13
           cache: pnpm
           registry-url: 'https://registry.npmjs.org'
 

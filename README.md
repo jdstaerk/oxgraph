@@ -9,7 +9,7 @@
   <a href="https://github.com/jdstaerk/oxgraph/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/jdstaerk/oxgraph/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="https://www.npmjs.com/package/@oxgraph/cli"><img alt="npm" src="https://img.shields.io/npm/v/@oxgraph/cli?color=0ea5e9" /></a>
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg" /></a>
-  <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D18-339933" />
+  <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D22.13-339933" />
 </p>
 
 <p align="center">
@@ -37,7 +37,7 @@ Most JavaScript graphing tools keep parsing and analysis in Node.js. oxgraph mov
 
 ## Quick Start
 
-You only need Node.js 18 or newer. For one-off use, do not install anything globally:
+You only need Node.js 22.13 or newer. For one-off use, do not install anything globally:
 
 ```bash
 # Analyze the current repository
