@@ -72,7 +72,7 @@ pub fn build_call_graph(
 ) -> Result<CallGraph, CallGraphBuildError> {
     let target = resolve_analysis_target(entry_file.as_ref())?;
     let project_root = find_project_root(target.path());
-    let resolver = create_module_resolver(target.path());
+    let resolver = create_module_resolver();
     let initial_paths = match target {
         AnalysisTarget::File(entry_path) => vec![entry_path],
         AnalysisTarget::Directory(root_path) => {

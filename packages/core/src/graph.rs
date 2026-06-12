@@ -139,7 +139,7 @@ impl From<EntryPathError> for GraphBuildError {
 pub fn build_graph(entry_file: impl AsRef<Path>) -> Result<Graph, GraphBuildError> {
     let target = resolve_analysis_target(entry_file.as_ref())?;
     let project_root = find_project_root(target.path());
-    let resolver = create_module_resolver(target.path());
+    let resolver = create_module_resolver();
     let mut builder = GraphBuilder::new(resolver, project_root);
 
     match target {
@@ -679,6 +679,54 @@ mod tests {
                 && !node.is_entry)
         );
         assert!(graph.nodes.iter().any(|node| node.label == "Shell.tsx"));
+
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn resolves_package_tsconfig_aliases_when_directory_is_passed() {
+        let dir = create_test_dir("nested-tsconfig-directory-scope");
+        fs::write(
+            dir.join("pnpm-workspace.yaml"),
+            "packages:\n  - packages/*\n",
+        )
+        .unwrap();
+        fs::create_dir_all(dir.join("packages/app/src")).unwrap();
+        fs::write(dir.join("packages/app/package.json"), "{}").unwrap();
+        fs::write(
+            dir.join("packages/app/tsconfig.json"),
+            r#"{"compilerOptions":{"baseUrl":".","paths":{"@app/*":["src/*"]}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("packages/app/src/main.ts"),
+            "import { helper } from '@app/util';\nhelper();\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("packages/app/src/util.ts"),
+            "export function helper() {}\n",
+        )
+        .unwrap();
+
+        let graph = build_graph(&dir).unwrap();
+        let main_id =
+            stable_path_string(&fs::canonicalize(dir.join("packages/app/src/main.ts")).unwrap());
+        let util_id =
+            stable_path_string(&fs::canonicalize(dir.join("packages/app/src/util.ts")).unwrap());
+
+        assert!(
+            graph
+                .edges
+                .iter()
+                .any(|edge| edge.source == main_id && edge.target == util_id)
+        );
+        assert!(
+            graph
+                .issues
+                .iter()
+                .all(|issue| issue.kind != GraphIssueKind::ResolveError)
+        );
 
         fs::remove_dir_all(dir).ok();
     }

@@ -4,7 +4,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import open from "open";
@@ -14,6 +14,13 @@ import {
   type CallGraphData,
   type GraphData,
 } from "@oxgraph/core";
+
+export class CliUsageError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CliUsageError";
+  }
+}
 
 type CliOptions = {
   apiOnly: boolean;
@@ -28,33 +35,63 @@ const uiDistDir = path.resolve(currentDir, "../../public-ui");
 const dependencyGraphRoute = "/api/graph-data/dependencies";
 const callGraphRoute = "/api/graph-data/call-graph";
 
-function parseCliOptions(): CliOptions {
-  const args = process.argv.slice(2);
-  const targetFlagIndex = args.findIndex(
-    (arg) => arg === "--file" || arg === "-f",
-  );
-  const flaggedTargetPath =
-    targetFlagIndex !== -1 ? args[targetFlagIndex + 1] : undefined;
-  const positionalTargetPath = args.find(
-    (arg, index) =>
-      !arg.startsWith("-") &&
-      (targetFlagIndex === -1 || index !== targetFlagIndex + 1),
-  );
-  const targetPath = flaggedTargetPath || positionalTargetPath;
+export function parseCliOptions(
+  args = process.argv.slice(2),
+  cwd = process.cwd(),
+): CliOptions {
+  let apiOnly = false;
+  let openBrowser = true;
+  let targetPath: string | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (arg === "--api-only") {
+      apiOnly = true;
+      continue;
+    }
+
+    if (arg === "--no-open") {
+      openBrowser = false;
+      continue;
+    }
+
+    if (arg === "--file" || arg === "-f") {
+      const value = args[index + 1];
+      if (!value || value.startsWith("-")) {
+        throw new CliUsageError(`Missing value for ${arg}.`);
+      }
+      if (targetPath) {
+        throw new CliUsageError("Only one target path can be provided.");
+      }
+      targetPath = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("-")) {
+      throw new CliUsageError(`Unknown option: ${arg}`);
+    }
+
+    if (targetPath) {
+      throw new CliUsageError("Only one target path can be provided.");
+    }
+    targetPath = arg;
+  }
 
   return {
-    apiOnly: args.includes("--api-only"),
-    openBrowser: !args.includes("--no-open"),
-    targetPath: resolveTargetPath(targetPath),
+    apiOnly,
+    openBrowser,
+    targetPath: resolveTargetPath(targetPath, cwd),
   };
 }
 
-function resolveTargetPath(cliPath?: string): string {
+function resolveTargetPath(cliPath: string | undefined, cwd: string): string {
   if (cliPath) {
-    return path.resolve(process.cwd(), cliPath);
+    return path.resolve(cwd, cliPath);
   }
 
-  return process.cwd();
+  return cwd;
 }
 
 function contentTypeFor(filePath: string): string {
@@ -186,11 +223,11 @@ function listenWithFallback(
 }
 
 function main(): void {
-  const options = parseCliOptions();
   const timerLabel = "Rust AST Parsing & Resolution";
   let timerStarted = false;
 
   try {
+    const options = parseCliOptions();
     console.time(timerLabel);
     timerStarted = true;
     const graphData = extractGraph(options.targetPath);
@@ -209,4 +246,20 @@ function main(): void {
   }
 }
 
-main();
+function isMainModule(): boolean {
+  return process.argv[1]
+    ? normalizeMainPath(process.argv[1]) === normalizeMainPath(currentFilePath)
+    : false;
+}
+
+function normalizeMainPath(filePath: string): string {
+  try {
+    return realpathSync(filePath);
+  } catch {
+    return path.resolve(filePath);
+  }
+}
+
+if (isMainModule()) {
+  main();
+}

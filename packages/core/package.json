@@ -32,19 +32,9 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "packageManager": "pnpm@10.29.3",
+  "license": "MIT",
+  "packageManager": "pnpm@11.5.3",
   "devDependencies": {
     "@napi-rs/cli": "^3.7.0"
-  },
-  "optionalDependencies": {
-    "@oxgraph/core-darwin-arm64": "0.1.0",
-    "@oxgraph/core-darwin-x64": "0.1.0",
-    "@oxgraph/core-linux-arm64-gnu": "0.1.0",
-    "@oxgraph/core-linux-arm64-musl": "0.1.0",
-    "@oxgraph/core-linux-x64-gnu": "0.1.0",
-    "@oxgraph/core-linux-x64-musl": "0.1.0",
-    "@oxgraph/core-win32-arm64-msvc": "0.1.0",
-    "@oxgraph/core-win32-x64-msvc": "0.1.0"
   }
 }

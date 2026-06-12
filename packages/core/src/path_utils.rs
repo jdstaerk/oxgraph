@@ -127,9 +127,21 @@ pub(crate) fn find_tsconfig(start_dir: &Path) -> Option<PathBuf> {
 }
 
 pub(crate) fn internal_alias_patterns(project_root: &Path) -> Vec<InternalAliasPattern> {
-    let Some(tsconfig_path) = find_tsconfig(project_root) else {
-        return Vec::new();
-    };
+    let mut tsconfig_paths = collect_tsconfig_paths(project_root);
+
+    if tsconfig_paths.is_empty()
+        && let Some(tsconfig_path) = find_tsconfig(project_root)
+    {
+        tsconfig_paths.push(tsconfig_path);
+    }
+
+    tsconfig_paths
+        .iter()
+        .flat_map(|tsconfig_path| internal_alias_patterns_from_tsconfig(tsconfig_path))
+        .collect()
+}
+
+fn internal_alias_patterns_from_tsconfig(tsconfig_path: &Path) -> Vec<InternalAliasPattern> {
     let Ok(tsconfig) = fs::read_to_string(tsconfig_path) else {
         return Vec::new();
     };
@@ -148,6 +160,33 @@ pub(crate) fn internal_alias_patterns(project_root: &Path) -> Vec<InternalAliasP
         .keys()
         .filter_map(|key| alias_pattern_from_tsconfig_key(key))
         .collect()
+}
+
+fn collect_tsconfig_paths(root: &Path) -> Vec<PathBuf> {
+    let root = normalize_existing_path(root).unwrap_or_else(|_| root.to_path_buf());
+    let mut directories = vec![root];
+    let mut tsconfig_paths = Vec::new();
+
+    while let Some(directory) = directories.pop() {
+        let candidate = directory.join("tsconfig.json");
+        if candidate.exists() {
+            tsconfig_paths.push(candidate);
+        }
+
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_dir() && !is_ignored_directory(&path) {
+                directories.push(path);
+            }
+        }
+    }
+
+    tsconfig_paths.sort();
+    tsconfig_paths
 }
 
 fn alias_pattern_from_tsconfig_key(key: &str) -> Option<InternalAliasPattern> {

@@ -312,6 +312,52 @@ fn directory_scope_finds_entry_function_in_nested_source_file() {
 }
 
 #[test]
+fn directory_scope_resolves_package_tsconfig_aliases() {
+    let dir = create_test_dir("directory-call-tsconfig-scope");
+    fs::write(
+        dir.join("pnpm-workspace.yaml"),
+        "packages:\n  - packages/*\n",
+    )
+    .unwrap();
+    fs::create_dir_all(dir.join("packages/app/src")).unwrap();
+    fs::write(dir.join("packages/app/package.json"), "{}").unwrap();
+    fs::write(
+        dir.join("packages/app/tsconfig.json"),
+        r#"{"compilerOptions":{"baseUrl":".","paths":{"@app/*":["src/*"]}}}"#,
+    )
+    .unwrap();
+    fs::write(
+        dir.join("packages/app/src/main.ts"),
+        "import { helper } from '@app/util';\nexport function start() { helper(); }\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("packages/app/src/util.ts"),
+        "export function helper() { return 1; }\n",
+    )
+    .unwrap();
+
+    let graph = build_call_graph(&dir, Some("start")).unwrap();
+
+    assert!(graph.nodes.iter().any(|node| node.name == "start"));
+    assert!(graph.nodes.iter().any(|node| node.name == "helper"));
+    assert!(graph.edges.iter().any(|edge| {
+        edge.callee_name == "helper"
+            && edge.kind == CallEdgeKind::Import
+            && edge.confidence == CallConfidence::High
+            && !edge.unresolved
+    }));
+    assert!(
+        graph
+            .issues
+            .iter()
+            .all(|issue| issue.kind != CallGraphIssueKind::ResolveError)
+    );
+
+    fs::remove_dir_all(dir).ok();
+}
+
+#[test]
 fn filters_entry_function_to_full_caller_and_callee_lines() {
     let dir = create_test_dir("recursive-entry-filter");
     fs::write(

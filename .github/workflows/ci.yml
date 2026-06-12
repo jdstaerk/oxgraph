@@ -40,7 +40,7 @@ jobs:
           workspaces: packages/core
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Type Check
         run: pnpm run type-check

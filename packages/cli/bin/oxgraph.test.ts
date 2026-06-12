@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
-import { createAppServer } from "./oxgraph.js";
+import path from "node:path";
+import { createAppServer, parseCliOptions } from "./oxgraph.js";
 import type { GraphData } from "@oxgraph/core";
 
 vi.mock("@oxgraph/core", () => ({
@@ -52,5 +53,27 @@ describe("CLI Server", () => {
 
     expect(response.status).toBe(404);
     expect(response.text).toBe("API server only.");
+  });
+
+  it("parses --file targets with following flags", () => {
+    expect(
+      parseCliOptions(["--file", "src/main.ts", "--api-only"], "/repo"),
+    ).toMatchObject({
+      apiOnly: true,
+      openBrowser: true,
+      targetPath: path.resolve("/repo", "src/main.ts"),
+    });
+  });
+
+  it("rejects --file without a path value", () => {
+    expect(() =>
+      parseCliOptions(["--file", "--api-only"], "/repo"),
+    ).toThrow("Missing value for --file.");
+  });
+
+  it("rejects unknown options", () => {
+    expect(() => parseCliOptions(["--unknown"], "/repo")).toThrow(
+      "Unknown option: --unknown",
+    );
   });
 });

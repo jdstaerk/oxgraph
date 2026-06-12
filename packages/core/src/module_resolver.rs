@@ -1,15 +1,8 @@
-use crate::path_utils::{find_tsconfig, normalize_existing_path};
-use oxc_resolver::{ResolveOptions, Resolver, TsconfigDiscovery, TsconfigOptions};
+use crate::path_utils::normalize_existing_path;
+use oxc_resolver::{ResolveOptions, Resolver, TsconfigDiscovery};
 use std::path::{Path, PathBuf};
 
-pub(crate) fn create_module_resolver(entry_path: &Path) -> Resolver {
-    let entry_dir = if entry_path.is_dir() {
-        entry_path
-    } else {
-        entry_path.parent().unwrap_or(entry_path)
-    };
-    let tsconfig = find_tsconfig(entry_dir);
-
+pub(crate) fn create_module_resolver() -> Resolver {
     let options = ResolveOptions {
         extensions: vec![
             ".ts".to_string(),
@@ -22,12 +15,7 @@ pub(crate) fn create_module_resolver(entry_path: &Path) -> Resolver {
             ".cjs".to_string(),
             ".json".to_string(),
         ],
-        tsconfig: tsconfig.map(|path| {
-            TsconfigDiscovery::Manual(TsconfigOptions {
-                config_file: path,
-                references: oxc_resolver::TsconfigReferences::Auto,
-            })
-        }),
+        tsconfig: Some(TsconfigDiscovery::Auto),
         ..ResolveOptions::default()
     };
 
@@ -39,9 +27,8 @@ pub(crate) fn resolve_module_path(
     source_file: &Path,
     specifier: &str,
 ) -> Result<PathBuf, String> {
-    let source_dir = source_file.parent().unwrap_or(source_file);
     resolver
-        .resolve(source_dir, specifier)
+        .resolve_file(source_file, specifier)
         .map(|resolution| {
             normalize_existing_path(resolution.full_path().as_path())
                 .unwrap_or_else(|_| resolution.full_path().to_path_buf())

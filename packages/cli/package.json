@@ -2,6 +2,7 @@
   "name": "@oxgraph/cli",
   "version": "0.1.0",
   "type": "module",
+  "license": "MIT",
   "engines": {
     "node": ">=22.13"
   },
@@ -13,9 +14,9 @@
     "oxgraph": "./dist/bin/oxgraph.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && pnpm run copy:ui",
+    "build": "shx rm -rf dist && tsc -p tsconfig.json && pnpm run copy:ui",
     "copy:ui": "shx rm -rf public-ui && shx cp -r ../ui/dist public-ui",
-    "dev": "tsc -p tsconfig.json && node dist/bin/oxgraph.js ../.. --api-only --no-open",
+    "dev": "shx rm -rf dist && tsc -p tsconfig.json && node dist/bin/oxgraph.js ../.. --api-only --no-open",
     "test": "vitest run",
     "type-check": "tsc -p tsconfig.json --noEmit",
     "lint": "oxlint .",
