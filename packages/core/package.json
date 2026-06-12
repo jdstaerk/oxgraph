@@ -1,10 +1,33 @@
 {
   "name": "@oxgraph/core",
   "version": "0.1.0",
-  "description": "High-performance AST parser for oxgraph",
+  "description": "Native Rust dependency and call graph engine for oxgraph",
+  "homepage": "https://github.com/jdstaerk/oxgraph#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jdstaerk/oxgraph.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/jdstaerk/oxgraph/issues"
+  },
+  "keywords": [
+    "code-analysis",
+    "call-graph",
+    "dependency-graph",
+    "typescript",
+    "javascript",
+    "rust",
+    "oxc"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
+    "README.md",
     "index.js",
     "index.d.ts",
     "*.node"
@@ -30,9 +53,7 @@
     "format:fix": "oxlint . --fix",
     "format:check": "oxlint ."
   },
-  "keywords": [],
   "author": "",
-  "license": "MIT",
   "packageManager": "pnpm@11.5.3",
   "devDependencies": {
     "@napi-rs/cli": "^3.7.0"

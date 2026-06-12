@@ -2,7 +2,18 @@
   "name": "@oxgraph/ui",
   "private": true,
   "version": "0.1.0",
+  "description": "React graph visualization UI for oxgraph",
   "type": "module",
+  "license": "MIT",
+  "homepage": "https://jdstaerk.github.io/oxgraph/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jdstaerk/oxgraph.git",
+    "directory": "packages/ui"
+  },
+  "bugs": {
+    "url": "https://github.com/jdstaerk/oxgraph/issues"
+  },
   "scripts": {
     "dev": "vite",
     "dev:demo": "vite --mode demo",

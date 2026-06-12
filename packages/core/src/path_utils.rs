@@ -75,7 +75,30 @@ pub(crate) fn resolve_analysis_target(path: &Path) -> Result<AnalysisTarget, Ent
 }
 
 pub(crate) fn normalize_existing_path(path: &Path) -> Result<PathBuf, String> {
-    fs::canonicalize(path).map_err(|err| err.to_string())
+    fs::canonicalize(path)
+        .map(strip_verbatim_path_prefix)
+        .map_err(|err| err.to_string())
+}
+
+#[cfg(windows)]
+fn strip_verbatim_path_prefix(path: PathBuf) -> PathBuf {
+    let raw = path.to_string_lossy();
+
+    if let Some(path) = raw.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{}", path));
+    }
+
+    if let Some(path) = raw.strip_prefix(r"\\?\") {
+        return PathBuf::from(path);
+    }
+
+    drop(raw);
+    path
+}
+
+#[cfg(not(windows))]
+fn strip_verbatim_path_prefix(path: PathBuf) -> PathBuf {
+    path
 }
 
 pub(crate) fn stable_path_string(path: &Path) -> String {
@@ -276,10 +299,12 @@ fn is_ignored_directory(path: &Path) -> bool {
 
 fn normalize_path(path: &Path) -> Result<PathBuf, EntryPathError> {
     if path.exists() {
-        fs::canonicalize(path).map_err(|err| EntryPathError::ReadFailed {
-            path: path.to_path_buf(),
-            message: err.to_string(),
-        })
+        fs::canonicalize(path)
+            .map(strip_verbatim_path_prefix)
+            .map_err(|err| EntryPathError::ReadFailed {
+                path: path.to_path_buf(),
+                message: err.to_string(),
+            })
     } else {
         Ok(path.to_path_buf())
     }
